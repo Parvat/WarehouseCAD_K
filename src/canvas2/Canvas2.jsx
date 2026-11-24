@@ -66,6 +66,7 @@ import { CROSS_AISLE_TOOL, useCrossAisleTool, commitCut } from '../utils/crossAi
 import { commitTunnel } from '../utils/tunnel'
 import { TunnelMarks } from './TunnelMarks'
 import { StackHint } from './StackHint'   // (stacking)
+import { SmartGuideLines } from './SmartGuideLines'   // (gen-lock)
 
 // the canvas text, measured for the tests (CLAUDE.md Rule 8 — the CAD text model: canvas2/minText.js)
 installMinText()
@@ -740,6 +741,11 @@ export function Canvas2() {
             {measuring && (
               <MeasureOverlay points={measurePts} hover={measureHover} zoom={zoom} gridSize={gridSize} />
             )}
+          </Layer>
+          {/* (gen-lock) the overlay's text — row numbers, the sections' legend, a grid's annotation, the doors' tags — on a
+              layer of their own, in the same drawing order: a drag lifts a selection's outline and handles out of the layer
+              above (dragLift.js), and redrawing that once no longer redraws every row number with it */}
+          <Layer listening={false}>
             {/* the rack line numbers R1, R2 … at each row end (RackLineLabels.jsx — the BOM's rows) */}
             <RackLineLabels />
             {/* the sections' legend: a key outside the building, its bottom-left (SectionLegend.jsx — legend round: no name
@@ -749,6 +755,9 @@ export function Canvas2() {
             <ColumnGridAnnot />
             {/* the doors' tags and a selected door's gap chain (doors-edit round) */}
             <DoorAnnot />
+          </Layer>
+          {/* the rest of the overlay, above them as before */}
+          <Layer listening={false}>
             {/* the Row group: its rows outlined, a pending apply previewed (RowGroupPreview.jsx); a row being placed */}
             <RowGroupPreview />
             {/* the Split tool's cut line (SplitPreview.jsx) */}
@@ -782,6 +791,10 @@ export function Canvas2() {
             <SectionDraft />
             {unlockedSel && selectedObjects.length === 1 && <SectionPointHandles obj={selectedObjects[0]} />}
             {unlockedSel && selectedObjects.length === 1 && <ShapePointHandles obj={selectedObjects[0]} />}
+          </Layer>
+          {/* (gen-lock) a drag's snap guides, on their own layer: a guide coming or going redraws only them */}
+          <Layer listening={false}>
+            <SmartGuideLines />
           </Layer>
         </Stage>
       )}

@@ -1,6 +1,8 @@
-import { setDragPreview, clearDragPreview, setDragging } from './dragPreview'
+import { setDragPreview, clearDragPreview, setDragging, setFluePreview, useDragPreview } from './dragPreview'
 import { textOwnsKey } from '../utils/typing'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { setSmartGuides } from './SmartGuideLines'   // (gen-lock)
+const NO_GUIDES = []
 import Konva from 'konva'
 import { hitTest, hitTestBay, fpWallHitTest, boundsOf } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles, objHasResizeHandles } from './handleGeometry'
@@ -74,6 +76,7 @@ import { zoomAtPoint, wheelFactor, screenToWorld, fitView, worldBounds } from '.
 import { fitInset } from '../studio/fitInset'
 import { stackHintAfterClick, hideStackHint } from './StackHint'   // (stacking)
 import { nearTargets } from './snapIndex'   // (drag-perf-bar)
+import { liftDragNodes, dropLift } from './dragLift'   // (gen-lock)
 
 /* Beam/lane racks whose applyResize branch handles its own snapping
    internally (bay/tower/lane counts, not raw pixels) — ported verbatim from
@@ -128,7 +131,8 @@ export function useCanvasInteraction({
 }) {
   const [cursor, setCursor] = useState('default')
   const [marquee, setMarquee] = useState(null)
-  const [smartGuides, setSmartGuides] = useState([])
+  // (gen-lock) the snap guides are drawn on their own layer from their own store (SmartGuideLines.jsx), not from here
+  const smartGuides = NO_GUIDES
 
   const spaceDown = useRef(false)
   useEffect(() => {
@@ -1521,6 +1525,8 @@ export function useCanvasInteraction({
           // re-collect now that React has had a chance to mount a freshly-selected node's outline
           const fresh = collectDragNodes(stage, d.ids)
           if (fresh.length) d.nodes = fresh
+          // (gen-lock) the moved nodes lifted into layers of their own: a frame redraws only them (dragLift.js)
+          d.lift = liftDragNodes(stage, d.nodes)
         }
         d.moved = true
         setDragging(true)
@@ -1611,13 +1617,9 @@ export function useCanvasInteraction({
              snapped position too would only risk the flue and the snap
              fighting each other frame to frame for no real benefit. */
           const at = flueDragPlacement(d.origin, d.size, dx, dy, liveFlue.targetHeight)
-          st.updateObject(d.ids[0], {
-            x: at.x,
-            y: at.y,
-            height: liveFlue.targetHeight,
-            flueSpaceIn: liveFlue.targetFlueIn,
-          })
-          stage.batchDraw()
+          // (gen-lock) held in the drag preview, written to the store once on the drop (dragPreview.js setFluePreview)
+          setFluePreview({ id: d.ids[0], x: at.x, y: at.y, height: liveFlue.targetHeight, flueSpaceIn: liveFlue.targetFlueIn })
+          if (d.lift) d.lift.draw(); else stage.batchDraw()
           return
         }
 
@@ -1701,7 +1703,7 @@ export function useCanvasInteraction({
         for (const n of d.nodes) n.node.position({ x: n.rest.x + dx, y: n.rest.y + dy })
         // aisle warnings and clearance labels follow the drag live
         setDragPreview(d.movedIds, dx, dy)
-        stage.batchDraw()
+        if (d.lift) d.lift.draw(); else stage.batchDraw()   // (gen-lock) only the lifted layers (dragLift.js)
         return
       }
 
@@ -1852,6 +1854,8 @@ export function useCanvasInteraction({
 
       const d = objDrag.current
       objDrag.current = null
+      const flueNow = useDragPreview.getState().flue   // (gen-lock) a live-flue drag's last place and flue, written below
+      dropLift()                       // (gen-lock) the lifted nodes back in their own layers before the drop's store write
       clearDragPreview()
       // a press on the selected row that never moved: the click — it drills to the bay under it
       if (d && !d.moved && d.drill) selectFromHit(d.drill.hitId, false, d.drill.world)
@@ -1881,6 +1885,8 @@ export function useCanvasInteraction({
              genuine base — see beginDrag's own comment for the failure
              this prevents. */
           if (d.moved) {
+            // (gen-lock) the drag held its place and flue in the drag preview: written now, as each frame used to
+            if (flueNow && flueNow.id === d.ids[0]) useCanvasStore.getState().updateObject(flueNow.id, { x: flueNow.x, y: flueNow.y, height: flueNow.height, flueSpaceIn: flueNow.flueSpaceIn })
             const st = useCanvasStore.getState()
             const obj = st.objects.find(o => o.id === d.ids[0])
             const s0 = d.startObj
@@ -2001,7 +2007,7 @@ export function useCanvasInteraction({
     }
     // the drop: whatever the gesture committed, the full column check runs once now
     // whatever the gesture, its live preview ends with it (the clearance tags drawn from it go — STUDIO.md §7)
-    const up = () => { try { upGesture() } finally { setDragging(false); clearDragPreview() } }
+    const up = () => { try { upGesture() } finally { dropLift(); setDragging(false); clearDragPreview() } }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
     return () => {

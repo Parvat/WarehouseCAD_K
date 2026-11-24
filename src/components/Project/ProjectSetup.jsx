@@ -13,7 +13,7 @@ import { useLengthField } from '../../studio/lengthField'   // (units-2)
 import { useProjectSetup, closeSetup, installStartScreen, projectOf, newProject, newId, palletName, withProject, syncTypesToPallets, layoutAffecting, ceilingInUse, palletInUse, generateBrief, ADVANCED_DEFAULTS, PALLET_DEFAULT, RULES_DEFAULTS, BUILDING_DEFAULTS, ASSUMED_CLEAR_IN } from '../../utils/project'
 import { refreshNames } from '../../utils/elevTab'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
-import { regenerateRacking, generateAndPlaceBatched } from '../../generate/traceGenerate'
+import { regenerateRackingLocked, generateAndPlaceBatched } from '../../generate/traceGenerate'
 import { bomSettings } from '../../utils/bom'
 
 /* ── The project screen (PROJECT_SETUP.md) ──────────────────────────────────────────────────────────────────────────
@@ -228,6 +228,7 @@ function StartCard() {
     try {
       const out = await generateAndPlaceBatched(generateBrief(pr, mheOptions, b), { onProgress: (p) => setBusy({ progress: p }), rules })
       if (out?.failed) { setFailed(true); return }
+      if (out?.cancelled || !out) return            // (gen-lock) cancelled: the start screen stays, the layout as before
       closeSetup()
     } finally { setBusy(null) }
   }
@@ -408,7 +409,8 @@ function SettingsCard() {
     const project = ask.project
     const pal = project.pallets.find(p => p.id === project.defaultPalletId) || project.pallets[0], r = useRackingSettings.getState()
     // the settings written inside the regenerate's own undo step (one Ctrl+Z: the racks and the settings together)
-    regenerateRacking({ orientation: 'auto', mhe: project.equipment.mhe, aisleFt: mheOptions[project.equipment.mhe]?.aisleFt ?? r.aisleFt, wallClearIn: project.rules.wallClearIn, maxRunFt: r.maxRunFt, palletWIn: pal?.faceIn, palletDIn: pal?.depthIn, levels: 4 }, { beamIn: r.beamIn ?? 96, before: () => write(project) })
+    // (gen-lock) under the lock (utils/busyJob.js); Cancel leaves the layout and the settings as they were
+    regenerateRackingLocked({ orientation: 'auto', mhe: project.equipment.mhe, aisleFt: mheOptions[project.equipment.mhe]?.aisleFt ?? r.aisleFt, wallClearIn: project.rules.wallClearIn, maxRunFt: r.maxRunFt, palletWIn: pal?.faceIn, palletDIn: pal?.depthIn, levels: 4 }, { beamIn: r.beamIn ?? 96, before: () => write(project) })
     setAsk(null); closeSetup()
   }
   const rulesMhe = useRules().mheOptions                  // the Rules' widths, under this project's own

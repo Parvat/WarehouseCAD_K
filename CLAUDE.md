@@ -64,6 +64,10 @@ This file holds the rules; `CODEBASE.md` holds the map.
      no card or bar clips them (`studio/Popover.jsx`). REG-dropdown-attached checks that every one touches its field.
      The one exception: the View, Text and Layers island panels keep their own position (Rule 8 — upward and to the left
      of the right Properties card, never over it).
+   - **Cursors:** every text and number field, textarea and editable label shows the I-beam — over the field and over all
+     of its box (a narrow input in a wide field box, the Generate card's 240′: a press anywhere on the box puts the caret
+     in, `utils/fieldFocus.js`); every button, select and clickable chip shows the pointer. Set once for the whole app in
+     `studio/studio.css` — never per field. REG-cursors checks the Generate card, the cards, the bars and the dialogs.
    REG-basics runs every object type in the library and every draw tool through the contract with real clicks on two
    fixtures (older-horizontal and crowded-vertical). Before every report, also do a 10-minute dealer walkthrough of what
    changed.

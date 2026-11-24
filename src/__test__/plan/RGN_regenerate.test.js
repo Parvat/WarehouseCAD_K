@@ -182,7 +182,7 @@ describe('RGN — Regenerate racking', () => {
     expect(src).toMatch(/Keeps zones, doors and columns\. Replaces racking\./)
     expect(src).toMatch(/Hand edits to these racks can't be detected/)
     expect(src).toMatch(/hand edit\$\{ask\.handEdits === 1 \? '' : 's'\} to generated racks will be lost/)
-    expect(src).toMatch(/regenerateRacking\(genBrief\(pr, mheOptions\), \{ rules, beamIn: useRackingSettings\.getState\(\)\.beamIn \?\? 96, before: /)
+    expect(src).toMatch(/regenerateRackingLocked\(genBrief\(pr, mheOptions\), \{ rules, beamIn: useRackingSettings\.getState\(\)\.beamIn \?\? 96, before: /)
     expect(src).toMatch(/const outcome = await startOverLayout\(useCanvasStore, \{ rules, mheOptions, onProgress: setProgress, project: next, before: /)
     expect(/>Start over</.test(src)).toBe(false)                                                       // not in the card
     // the card never runs past the window: its fields scroll, the footer stays
@@ -194,6 +194,9 @@ describe('RGN — Regenerate racking', () => {
     expect(menu).toMatch(/role="group" aria-label="Start over with a new building"[\s\S]*>Cancel<\/button>[\s\S]*onClick=\{startOver\}[^>]*>Start over<\/button>/)
     expect(menu).toMatch(/const startOver = \(\) => \{ onClose\(\); startOverLayout\(useCanvasStore, \{ rules, mheOptions \}\) \}/)
     const tg = readFileSync(new URL('../../generate/traceGenerate.js', import.meta.url), 'utf8')
-    expect((tg.match(/stampGenPlaced\(queue\)\r?\n\s*endOneStep\(kept\)/g) || []).length).toBe(2)
+    // (gen-lock) the sync and the locked entry share ONE step generator, which stamps what Generate placed
+    expect((tg.match(/stampGenPlaced\(queue\)\r?\n\s*endOneStep\(kept\)/g) || []).length).toBe(1)
+    expect(tg).toMatch(/export function generateAndPlace\([^)]*\) \{\r?\n\s*return drain\(generateSteps\(/)
+    expect(tg).toMatch(/export function generateAndPlaceBatched\([^)]*\) \{\r?\n\s*return runSteps\('Generating layout', generateSteps\(/)
   })
 })

@@ -133,7 +133,12 @@ export function pickFile() {
 }
 
 // ─── localStorage auto-save ───────────────────────────────────────────────────
+/* (gen-lock) held while a long job runs (utils/busyJob.js): its in-between states are never saved — the job saves its
+   finished layout once, a cancelled one nothing */
+let held = false
+export const holdAutoSave = (on) => { held = !!on }
 export function autoSave(json) {
+  if (held) return
   try { localStorage.setItem(LS_KEY, json) } catch {}
 }
 

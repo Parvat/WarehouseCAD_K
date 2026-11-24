@@ -18,6 +18,7 @@ import { drawnRect } from './sectionEdit'
 import { snapshotOf } from './elevations'
 import { autoSave, serializeScene } from './saveLoad'
 import { useCanvasStore } from '../store/useCanvasStore'
+import { runSteps, drainSteps } from './busyJob'   // (gen-lock)
 
 export const FILL_TOOL = 'fill_racking'
 
@@ -183,7 +184,11 @@ function governingSection(objects, p) { return selectedSection(objects) || (p ? 
 
 /** Fill section (sections-3 — the section's selection bar): the whole of section `id` filled with its equipment in one
  *  click, clipped to it (a custom shape keeps the racks wholly inside), ONE undo step. → the racks placed (0: none fit). */
-export function fillWholeSection(store, id) {
+export function fillWholeSection(store, id) { return drainSteps(fillSectionSteps(store, id)) }
+/** (gen-lock) Fill section under the lock (utils/busyJob.js): the racks placed at once when the fill is worked out;
+ *  Cancel or Esc → { cancelled: true }, nothing placed. → the racks placed (0: none fit). */
+export function fillWholeSectionLocked(store, id) { return runSteps('Filling section', fillSectionSteps(store, id)) }
+function* fillSectionSteps(store, id) {
   const st = store.getState(), s = st.objects.find(o => o.id === id)
   if (!s || !isSection(s)) return 0
   const poly = polygonOf(s), xs = poly.map(q => q[0]), ys = poly.map(q => q[1])
@@ -199,6 +204,7 @@ export function fillWholeSection(store, id) {
     if (created && s.shape === 'poly') created = { ...created, plan: keepInside(created.plan, s) }
   } finally { useCanvasStore.setState({ selectedIds: sel }) }
   if (!created || !created.plan.racks.length) return 0
+  yield 0.9
   const { area, plan } = created
   store.setState({ objects: [...store.getState().objects, area, ...plan.racks, ...plan.aisles] })
   store.getState().commitObjectUpdate(area.id, {})

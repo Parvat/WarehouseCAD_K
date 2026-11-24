@@ -39,8 +39,8 @@ export const toScreen = (v, p) => ({ x: p.x * v.zoom + v.panX, y: p.y * v.zoom +
 /** The objects as drawn now: the store's, with the current drag's offset on what it moves. */
 export function useLiveObjects() {
   const objects = useCanvasStore(s => s.objects)
-  const { ids, dx, dy } = useDragPreview(useShallow(s => ({ ids: s.ids, dx: s.dx, dy: s.dy })))
-  return useMemo(() => previewObjects(objects, { ids, dx, dy }), [objects, ids, dx, dy])
+  const { ids, dx, dy, flue } = useDragPreview(useShallow(s => ({ ids: s.ids, dx: s.dx, dy: s.dy, flue: s.flue })))
+  return useMemo(() => previewObjects(objects, { ids, dx, dy, flue }), [objects, ids, dx, dy, flue])
 }
 /** The current drag's offset for things kept by id (a highlight's shapes): (dx, dy) when every one of `ids` moves. */
 export function useLiveOffset(ids) {

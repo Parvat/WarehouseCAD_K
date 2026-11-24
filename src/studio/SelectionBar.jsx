@@ -26,7 +26,7 @@ import { getRackCapacity } from '../utils/capacity'
 import { levelsResolver } from '../utils/elevations'
 import { useBayLedger } from '../components/RightPanel/useBayLedger'
 import { SPLIT_TOOL } from '../utils/splitTool'
-import { FILL_TOOL, fillWholeSection } from '../utils/fillTool'
+import { FILL_TOOL, fillWholeSectionLocked } from '../utils/fillTool'
 import { notify } from '../utils/notice'
 import { DOOR_TOOL, useDoorTool } from '../utils/doorTool'
 import { endTool } from '../utils/toolSwitch'
@@ -388,7 +388,7 @@ function SectionSelBar({ obj }) {
       )}
       <Sep />
       <button type="button" aria-label="Fill section" title={locked ? 'Locked' : 'Fill section — the whole section, with its equipment (one undo)'} disabled={locked}
-        onClick={() => { if (!fillWholeSection(store, obj.id)) notify('No racks fit in this section') }}
+        onClick={async () => { const n = await fillWholeSectionLocked(store, obj.id); if (n === 0) notify('No racks fit in this section') }}
         style={{ ...toggleBtn(false), ...(locked ? { opacity: 0.45, cursor: 'not-allowed' } : null) }}>Fill section</button>
       {hasBoundary(obj) && (
         <button type="button" title={locked ? 'Locked' : "Add door — on this section's edges (Esc ends)"} disabled={locked} onClick={() => startSectionDoors(store, obj.id)}

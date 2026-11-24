@@ -6,7 +6,7 @@ import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLa
 import { useCanvasStore } from '../store/useCanvasStore'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
-import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
+import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom, rackDrawOps } from '../render/rackOps'
 import { columnGridOps } from '../render/columnDraw'
 import { useLiveObjects, useView } from './live'
 import { gridBuilding } from '../utils/columnGrid'
@@ -20,6 +20,7 @@ import { useFlueHover } from '../utils/baySides'
 import { bandRects, ELEV_FILL_OPACITY } from '../utils/elevationDraw'
 export { bayRectForIndex, positionRectForIndex }
 import { aisleRect } from './hitTest'
+import { useFlued } from './dragPreview'   // (gen-lock)
 
 /** Min/max extent of a vertex list, in the same absolute world coords the
  *  verts are already drawn in. Shared by FloorPlanShape's own selfRect and
@@ -306,7 +307,10 @@ function multiBaySelectionRects(obj, gridSize, activeBaySelection) {
 }
 
 /** A rack, from its draw-ops. */
-function RackShapeView({ obj, ops, gridSize, listening = false, bind, activeBaySelection, lz = DEFAULT_LZ, elev = null }) {
+function RackShapeView({ obj: stored, ops: storedOps, gridSize, listening = false, bind, activeBaySelection, lz = DEFAULT_LZ, elev = null }) {
+  // (gen-lock) the pair being dragged with its live flue: drawn from the drag preview (dragPreview.js useFlued)
+  const obj = useFlued(stored)
+  const ops = useMemo(() => (obj === stored ? storedOps : rackDrawOps(obj, { gridSize })), [obj, stored, storedOps, gridSize])
   const msRects = multiBaySelectionRects(obj, gridSize, activeBaySelection)
   // the pointer over this pair's flue: that bay on both halves (utils/baySides.js) — a click there picks both
   const flueBay = useFlueHover(h => (h.objId === obj.id ? h.bayIdx : null))
@@ -725,7 +729,8 @@ export function outlineBounds(obj, gridSize = 40, objects = []) {
    `objects` is only ever read for an aisle (outlineBounds's own aisleRect
    branch) — every other type ignores it, so callers that never select an
    aisle can omit it exactly as before. */
-export function SelectionOutline({ obj, gridSize = 40, objects = [], dashed = false }) {
+export function SelectionOutline({ obj: stored, gridSize = 40, objects = [], dashed = false }) {
+  const obj = useFlued(stored)   // (gen-lock) the pair dragged with its live flue: as drawn now
   /* a row whose bays are picked: thin and dashed (STUDIO.md §7); a selected row: the 2px solid outline */
   const line = dashed ? { strokeWidth: 1, dash: [5, 4] } : { strokeWidth: 2 }
   /* (d1-bar, design/selbar.png) a drawn line, rectangle, circle or polyline selected: only its own handles — no outer

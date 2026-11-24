@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { Group, Rect, Line, Circle, Text } from 'react-konva'
 import { spin } from './shapes'
 import { computeHandleLayout, HANDLE_FILL, HANDLE_ACCENT } from './handleGeometry'
+import { useFlued } from './dragPreview'   // (gen-lock)
 
 /** The rotate grip every selection shares (a rack, a group, a building): a
  *  short 1 px stem from (sx, sy) to the grip, and a small white disc with a
@@ -49,7 +50,8 @@ export function RotateGrip({ x, y, r, sx, sy, zoom }) {
    equivalent of strokeScaleEnabled for a Rect's own width/height — CanvasUI
    divides by zoom for the exact same reason, and this is the same trick,
    not a different one). */
-function ResizeHandlesOverlayView({ obj, zoom, gridSize = 40 }) {
+function ResizeHandlesOverlayView({ obj: stored, zoom, gridSize = 40 }) {
+  const obj = useFlued(stored)   // (gen-lock) the pair dragged with its live flue: as drawn now
   const layout = computeHandleLayout(obj, zoom)
   const { enabled, positions, hs, canRotate, rotateHandle } = layout
   if (!enabled.length && !canRotate) return null

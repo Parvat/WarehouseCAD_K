@@ -9899,6 +9899,193 @@ describe('REG — the hand check by real clicks', () => {
       expect(await labels()).toEqual(lab1)
     }, T)
 
+    /* ── gen-lock: a drag redraws only what it moves (canvas2/dragLift.js) ── */
+    it('REG-drag-lift (click): a rack, then a back-to-back pair (its live flue), dragged with the real mouse — mid-drag the layer the racks are drawn on and the layer of the row numbers are not redrawn (only the dragged nodes, lifted into layers of their own); after the drop every node is back in its own layer in its own order, no lifted layer is left, and the plan is pixel for pixel what a fresh load of the dropped layout draws', async () => {
+      await open()
+      const page = L.page
+      await page.evaluate(() => { const K = window.Konva; window.__dl = new Map(); if (!K.__dlWrapped) { K.__dlWrapped = true; const o = K.Layer.prototype.drawScene; K.Layer.prototype.drawScene = function (...a) { window.__dl.set(this, (window.__dl.get(this) || 0) + 1); return o.apply(this, a) } } })
+      // the layers, and where each of the dragged rack's own nodes lives: its layer and its place in it
+      const layout = (id) => page.evaluate((id) => { const ls = window.Konva.stages[0].getLayers(); return { layers: ls.map(l => l.name()), nodes: ls.flatMap((l, i) => l.getChildren().filter(n => (n.name() || '').endsWith(':' + id)).map(n => n.name() + '@' + i + '#' + n.zIndex())).sort() } }, id)
+      const pix = () => page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const c = st.toCanvas({ pixelRatio: 1 }), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let h = 0; for (let i = 0; i < d.length; i += 3) h = (h * 31 + d[i]) | 0; return h })
+      const gs = await gs7()
+      for (const type of ['rack_row', 'rack_double_row']) {
+        const r = await L.S('const st = S.getState(), rs = st.objects.filter(o => o.type === arg); return rs[Math.floor(rs.length / 2)] || null', type)
+        if (!r) continue
+        await page.keyboard.press('Escape')
+        const at = { x: r.x + r.width / 2, y: r.y + r.height / 4 }
+        // close enough that 2 ft is a real drag (past the 6 px a press may wander)
+        await L.S('S.setState({ zoom: 0.5, panX: 700 - arg.x * 0.5, panY: 450 - arg.y * 0.5 })', at); await page.waitForTimeout(300)
+        await L.click(at); await page.waitForTimeout(300)
+        const before = await layout(r.id)
+        expect(before.nodes.length).toBeGreaterThan(1)
+        // the layers that must stay still: the racks' own, and the row numbers'
+        const still = await page.evaluate((id) => { const st = window.Konva.stages[0], body = st.findOne(n => n.name() === 'obj:' + id)?.getLayer(), text = st.findOne(n => n.name() === 'rack-line-label')?.getLayer(); window.__still = [body, text].filter(Boolean); return window.__still.length }, r.id)
+        expect(still).toBeGreaterThan(0)
+        const vert = await L.S('return import("/src/generate/columnCheck.js").then(C => !!C.rackFootprint(S.getState().objects.find(o => o.id === arg)).rotated)', r.id)
+        const p0 = await L.toScreen(at), p1 = await L.toScreen(vert ? { x: at.x + 2 * gs, y: at.y } : { x: at.x, y: at.y + 2 * gs })
+        await page.keyboard.down('Alt')
+        await page.mouse.move(p0.x, p0.y); await page.mouse.down()
+        for (let i = 1; i <= 4; i++) await page.mouse.move(p0.x + (p1.x - p0.x) * i / 10, p0.y + (p1.y - p0.y) * i / 10)
+        await page.waitForTimeout(250)
+        // under way: the dragged nodes lifted; from here on the racks' layer and the row numbers' layer are not drawn again
+        expect(await page.evaluate(() => window.Konva.stages[0].getLayers().filter(l => l.name() === 'drag-lift').length)).toBeGreaterThan(0)
+        await page.evaluate(() => window.__dl.clear())
+        for (let i = 5; i <= 10; i++) { await page.mouse.move(p0.x + (p1.x - p0.x) * i / 10, p0.y + (p1.y - p0.y) * i / 10); await page.waitForTimeout(30) }
+        const mid = await page.evaluate(() => ({ still: window.__still.map(l => window.__dl.get(l) || 0), lifted: [...window.__dl].filter(([l]) => l.name() === 'drag-lift').reduce((t, [, n]) => t + n, 0) }))
+        expect([mid.still.every(n => n === 0), mid.lifted > 0]).toEqual([true, true])
+        await page.mouse.up(); await page.keyboard.up('Alt'); await page.waitForTimeout(500)
+        // dropped: every node back where it lives, nothing lifted left; moved by 2 ft
+        expect(await layout(r.id)).toEqual(before)
+        const r1 = await L.S('return S.getState().objects.find(o => o.id === arg)', r.id)
+        expect(Math.round(Math.hypot(r1.x - r.x, r1.y - r.y) / gs)).toBe(2)
+      }
+      // the plan exactly as a fresh load of the dropped layout draws it
+      await page.keyboard.press('Escape'); await page.mouse.move(5, 300); await page.waitForTimeout(300)
+      const view = await L.S('const s = S.getState(); return { zoom: s.zoom, panX: s.panX, panY: s.panY }')
+      const px = await pix()
+      const doc = await L.S('return SL.serializeScene(S.getState())')
+      const Bm = await import('./handCheck/browser.js'); L = await Bm.openLayout(app, doc)
+      await L.S('S.setState(arg)', view); await L.page.mouse.move(5, 300); await L.page.waitForTimeout(600)
+      expect(await pix()).toBe(px)
+    }, T)
+
+    /* ── gen-lock: Generate / Regenerate run with the canvas locked; nothing placed until 100 %; Cancel / Esc undo nothing ── */
+    it('REG-gen-lock (click): Start over (Generate) and Regenerate run with the canvas read-only — a progress bar and Cancel over the plan, a click on a rack selects nothing, keys do nothing, the plan drawn exactly as before until 100 %; Esc and Cancel leave the layout (and its autosave) exactly as before; run to the end, the whole layout lands at once as ONE undo step', async () => {
+      await open()
+      const page = L.page
+      // the layout as the store holds it, drawn, and autosaved
+      const sig = () => L.S(`const st = S.getState(), s = JSON.stringify({ o: st.objects, l: st.layers, h: st.history.length, i: st.historyIndex, e: st.elevations, a: localStorage.getItem('warehousecad_autosave') })
+        let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h + ':' + st.objects.length`)
+      const objs = () => L.S('const s = JSON.stringify(S.getState().objects); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h')
+      const pix = () => page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const c = st.toCanvas({ pixelRatio: 0.5 }), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let h = 0; for (let i = 0; i < d.length; i += 5) h = (h * 31 + d[i]) | 0; return h })
+      const lock = page.locator('[data-busy-lock]')
+      const rack = await L.S('const o = S.getState().objects.find(o => /^rack_/.test(o.type)); return { x: o.x + o.width / 2, y: o.y + o.height / 2 }')
+      // what reaches the app while the lock is up: presses on the canvas, keys past the lock (counted where the app's own
+      // listeners sit — the lock stops them before)
+      await page.evaluate(() => { window.__lk = { down: 0, keys: 0 }; document.getElementById('canvas2-container').addEventListener('pointerdown', () => window.__lk.down++, true); document.addEventListener('keydown', () => window.__lk.keys++) })
+      const reached = () => page.evaluate(() => ({ ...window.__lk }))
+      // while it runs, read in one go: the layout (store, drawing, autosave), the bar, Cancel's place on screen
+      const during = (label) => page.evaluate((label) => {
+        const st = window.__hc.S.getState(), s = JSON.stringify({ o: st.objects, l: st.layers, h: st.history.length, i: st.historyIndex, e: st.elevations, a: localStorage.getItem('warehousecad_autosave') })
+        let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
+        const k = window.Konva.stages[0]; k.draw(); const c = k.toCanvas({ pixelRatio: 0.5 }), d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let p = 0; for (let i = 0; i < d.length; i += 5) p = (p * 31 + d[i]) | 0
+        const dlg = document.querySelector(`[role="dialog"][aria-label="${label}"]`), bar = dlg?.querySelector('[role="progressbar"]'), cancel = [...(dlg?.querySelectorAll('button') || [])].find(b => b.textContent === 'Cancel')
+        const r = cancel?.getBoundingClientRect()
+        return { sig: h + ':' + st.objects.length, pix: p, bar: !!bar && bar.getBoundingClientRect().width > 100, cancel: r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null, locked: !!document.querySelector('[data-busy-lock]') }
+      }, label)
+      // the Generate card's building made big (its own fields): the run takes a while
+      await page.getByRole('button', { name: /^(Generate|Regenerate)$/ }).first().click(); await page.waitForTimeout(300)
+      const card = page.locator('[aria-label="Generate"]')
+      for (const [f, v] of [['Building width (ft)', '900'], ['Building length (ft)', '1600']]) { const i = card.getByLabel(f); await i.click(); await i.fill(v); await i.press('Tab') }
+      const startOver = async () => {
+        await page.getByRole('button', { name: 'Layout menu' }).click(); await page.waitForTimeout(150)
+        await page.getByRole('menuitem', { name: 'Start over with a new building…' }).click()
+        await page.getByRole('group', { name: 'Start over with a new building' }).getByRole('menuitem', { name: 'Start over' }).click()
+      }
+      const s0 = await sig(), px0 = await pix(), r0 = await reached()
+      // (1) Start over: under way, the plan as it was; a click on a rack and keys reach nothing; Cancel → exactly as before
+      await startOver()
+      await lock.waitFor({ state: 'attached', timeout: 10000 })
+      const d1 = await during('Generating layout')
+      expect([d1.locked, d1.bar, !!d1.cancel, d1.sig, d1.pix]).toEqual([true, true, true, s0, px0])
+      const at = await L.toScreen(rack); await page.mouse.click(at.x, at.y)
+      await page.keyboard.press('Delete'); await page.keyboard.press('r')
+      await page.mouse.click(d1.cancel.x, d1.cancel.y)
+      await lock.waitFor({ state: 'detached', timeout: 60000 })
+      expect([await sig(), await pix(), await reached()]).toEqual([s0, px0, r0])
+      // (2) Start over to the end: the new layout at once, ONE undo step; Ctrl+Z → the layout as before, Ctrl+Y → the new
+      await startOver()
+      await lock.waitFor({ state: 'attached', timeout: 10000 })
+      await lock.waitFor({ state: 'detached', timeout: 120000 })
+      expect(await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).length')).toBeGreaterThan(50)
+      const o1 = await objs()
+      await page.mouse.move(5, 300); await page.keyboard.press('Control+z'); await page.waitForTimeout(400)
+      expect((await sig()).split(':')[1]).toBe(s0.split(':')[1])
+      await page.keyboard.press('Control+y'); await page.waitForTimeout(400)
+      expect(await objs()).toBe(o1)
+      // (3) Regenerate on the big layout: Esc part-way → exactly as it was
+      const s1 = await sig(), px1 = await pix(), r1 = await reached()
+      if (!(await card.count())) { await page.getByRole('button', { name: 'Regenerate' }).first().click(); await page.waitForTimeout(300) }
+      await card.getByRole('button', { name: 'Regenerate', exact: true }).click()
+      await lock.waitFor({ state: 'attached', timeout: 10000 })
+      await page.keyboard.press('Escape')
+      await lock.waitFor({ state: 'detached', timeout: 60000 })
+      expect([await sig(), await pix(), await reached()]).toEqual([s1, px1, r1])
+      // run to the end: replaced at once, one undo step
+      const i1 = await L.S('return S.getState().historyIndex')
+      await card.getByRole('button', { name: 'Regenerate', exact: true }).click()
+      await lock.waitFor({ state: 'attached', timeout: 10000 })
+      await lock.waitFor({ state: 'detached', timeout: 120000 })
+      expect(await L.S('return S.getState().historyIndex')).toBe(i1 + 1)
+      await page.mouse.move(5, 300); await page.keyboard.press('Control+z'); await page.waitForTimeout(400)
+      expect((await sig()).split(':')[1]).toBe(s1.split(':')[1])
+    }, 300000)
+
+    /* ── gen-lock: cursors, set once (CLAUDE.md Rule 9) ── */
+    it('REG-cursors (click): every text and number field shows the I-beam — over the field and over all of its box (the Generate card\'s 240′: a narrow input in a wide box) — and every button, select and clickable chip the pointer: the Generate card, a rack\'s card and bar, the building\'s card, a rectangle\'s bar, Project settings, the Layout menu, Rules, the Text panel; a press anywhere on a field\'s box puts the caret in its field', async () => {
+      await open()
+      const page = L.page, wait = (ms = 300) => page.waitForTimeout(ms)
+      const scan = () => page.evaluate(() => {
+        const vis = (e) => { const r = e.getBoundingClientRect(); if (r.width < 1 || r.height < 1) return false; const s = getComputedStyle(e); if (s.visibility === 'hidden' || +s.opacity === 0) return false; const h = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!h && (e === h || e.contains(h)) }
+        const nm = (e) => (e.getAttribute('aria-label') || e.title || e.textContent || e.tagName).trim().replace(/\s+/g, ' ').slice(0, 40)
+        const DRAG = new Set(['grab', 'grabbing', 'move', 'ew-resize', 'ns-resize', 'col-resize', 'row-resize', 'nwse-resize', 'nesw-resize'])
+        const at = (x, y) => { const h = document.elementFromPoint(x, y); return h ? getComputedStyle(h).cursor : null }
+        const bad = []; let fields = 0, buttons = 0
+        for (const e of document.querySelectorAll('input:not([type]), input[type=text], input[type=number], input[type=search], textarea, [contenteditable]:not([contenteditable=false])')) {
+          if (e.disabled || e.readOnly || e.closest('fieldset[data-locked]') || !vis(e)) continue
+          fields++
+          const r = e.getBoundingClientRect(), c = at(r.left + r.width / 2, r.top + r.height / 2)
+          if (c !== 'text') bad.push(`field ${nm(e)}: ${c}`)
+          const p = e.parentElement, pr = p.getBoundingClientRect()
+          if (pr.height <= 48 && pr.width > r.width + 8) for (const fx of [0.1, 0.5, 0.9]) { const h = document.elementFromPoint(pr.left + pr.width * fx, pr.top + pr.height / 2); if (h && p.contains(h) && !h.closest('button, select, [role=button]') && getComputedStyle(h).cursor !== 'text') { bad.push(`field box ${nm(e)} @${fx}: ${getComputedStyle(h).cursor}`); break } }
+        }
+        for (const e of document.querySelectorAll('button, [role=button], [role=tab], [role=menuitem], [role=option], [role=switch], select')) {
+          if (e.disabled || e.getAttribute('aria-disabled') === 'true' || e.closest('fieldset[data-locked]') || !vis(e)) continue
+          buttons++
+          const r = e.getBoundingClientRect(), c = at(r.left + r.width / 2, r.top + r.height / 2)
+          if (c !== 'pointer' && !DRAG.has(c)) bad.push(`button ${nm(e)}: ${c}`)
+        }
+        return { fields, buttons, bad }
+      })
+      const seen = {}, bad = []
+      const take = async (k) => { const s = await scan(); seen[k] = [s.fields, s.buttons]; bad.push(...s.bad.map(b => k + ' — ' + b)) }
+      // the Generate card
+      await page.getByRole('button', { name: /^(Generate|Regenerate)$/ }).first().click(); await wait(400)
+      await take('Generate')
+      // a press on the right of Building width's box: the caret in its field
+      const gcard = page.locator('[aria-label="Generate"]'), bw = gcard.getByLabel('Building width (ft)')
+      const box = await bw.evaluate(e => { const r = e.parentElement.getBoundingClientRect(); return { x: r.right - 12, y: r.top + r.height / 2 } })
+      await page.mouse.click(box.x, box.y); await wait(150)
+      expect(await page.evaluate(() => document.activeElement?.getAttribute('aria-label'))).toBe('Building width (ft)')
+      await page.keyboard.press('Escape'); await gcard.getByRole('button', { name: 'Close' }).click(); await wait()
+      // a rack: its card and its selection bar
+      const rack = await L.S('const o = S.getState().objects.find(o => /^rack_/.test(o.type)); return { x: o.x + o.width / 2, y: o.y + o.height / 2 }')
+      await L.click(rack); await wait(); await take('rack')
+      await page.keyboard.press('Escape'); await wait(150)
+      // the building, by its wall
+      const fp = await L.S('return S.getState().objects.find(o => /^fp_/.test(o.type))')
+      await L.click({ x: fp.x + fp.width / 2, y: fp.y + 2 }); await wait(); await take('building')
+      await page.keyboard.press('Escape'); await wait(150)
+      // a drawn rectangle beside the building, picked by a click: its bar
+      await L.S('const fp = S.getState().objects.find(o => /^fp_/.test(o.type)), o = { id: "rq1", type: "rectangle", x: fp.x - 1200, y: fp.y, width: 600, height: 400, stroke: "#333", fill: "#fff", strokeWidth: 2, layerId: S.getState().activeLayerId }, z = 0.2; S.setState({ objects: [...S.getState().objects, o], zoom: z, panX: 600 - (o.x + 300) * z, panY: 450 - (o.y + 200) * z })'); await wait()
+      await L.click({ x: fp.x - 900, y: fp.y + 2 }); await wait()
+      expect(await L.S('return S.getState().selectedIds')).toEqual(['rq1'])
+      await take('rectangle')
+      await page.keyboard.press('Escape'); await wait(150)
+      // the dialogs and panels
+      await page.getByRole('button', { name: 'Project settings' }).click(); await wait(400); await take('Project settings')
+      await page.keyboard.press('Escape'); await wait()
+      await page.getByRole('button', { name: 'Layout menu' }).click(); await wait(); await take('Layout menu')
+      await page.getByRole('menuitem', { name: 'Rules profiles…' }).click(); await wait(400); await take('Rules')
+      await page.keyboard.press('Escape'); await wait()
+      await page.locator('[data-island="bottom-right"]').getByRole('button', { name: 'Text' }).click(); await wait(); await take('Text panel')
+      await page.keyboard.press('Escape')
+      expect(bad).toEqual([])
+      // each screen was really scanned: fields where it has them, buttons on all
+      expect(Object.entries(seen).filter(([, [, b]]) => b === 0).map(([k]) => k)).toEqual([])
+      expect([seen.Generate[0] >= 5, seen['Project settings'][0] > 5, seen['Text panel'][0] > 3]).toEqual([true, true, true])
+    }, T)
+
     /* (basics-triage) one rack in a filled building: a Selective Rack placed where one row of the fixture's racks was (that
        row removed — setup), between real racks — so its snap and overlap are tested against them */
     const filledRackItem = () => {

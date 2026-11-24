@@ -150,7 +150,7 @@ describe.each(['horizontal', 'vertical'])('SH-5 — Regenerate is one undo step,
     expect([racks() === r1, P.projectOf(st().elevations).rules.wallClearIn]).toEqual([true, pr.rules.wallClearIn + 24])
     // the card and Project settings hand their writes to it (never a separate step first)
     const card = read('components/Generate/GeneratePanel.jsx'), setup = read('components/Project/ProjectSetup.jsx')
-    expect(between(card, 'const regenerate = () => {', 'setResult')).toMatch(/before: next \? \(\) => commitProject\(useCanvasStore, next\) : null/)
+    expect(between(card, 'const regenerate = async () => {', 'setResult')).toMatch(/before: next \? \(\) => commitProject\(useCanvasStore, next\) : null/)
     expect(between(setup, 'const regenerate = () => {', 'setAsk(null)')).toMatch(/\{ beamIn: r\.beamIn \?\? 96, before: \(\) => write\(project\) \}/)
     expect(/write\(project\)\s+const pal/.test(setup)).toBe(false)
   })

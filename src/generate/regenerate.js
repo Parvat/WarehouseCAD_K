@@ -74,7 +74,12 @@ export function innerBox(fp, gridSize = 40) {
  *  kept) → { objects, area, orientation, summary } or null when nothing fits. The generated racks, their aisles and the
  *  building's racking areas go; one new area over the building holds the new racks (its record counts the next
  *  regenerate's hand edits). Everything else is untouched. */
-export function planRegenerate(objects, fp, settings, { gridSize = 40, newId = nanoid, elevations = null } = {}) {
+export function planRegenerate(objects, fp, settings, opts = {}) {
+  const it = planRegenerateSteps(objects, fp, settings, opts)
+  let r; while (!(r = it.next()).done); return r.value
+}
+/** planRegenerate as steps (gen-lock): yields a progress point (0…1) after each orientation tried. */
+export function* planRegenerateSteps(objects, fp, settings, { gridSize = 40, newId = nanoid, elevations = null } = {}) {
   if (!fp) return null
   const summary = regenSummary(objects, fp)
   const gone = new Set([...summary.racks, ...summary.areas])
@@ -86,6 +91,7 @@ export function planRegenerate(objects, fp, settings, { gridSize = 40, newId = n
     // (autoCross: Generate's area keeps its automatic cross-aisles at Max run — a Fill's never cuts, xaisle-tool)
     const made = planAreaCreate(kept, box, { ...settings, orientation, autoCross: true }, { gridSize, newId, from, elevations })
     if (made && (!best || made.plan.positions > best.made.plan.positions)) best = { made, orientation }
+    yield 0.1 + 0.8 * (tries.indexOf(orientation) + 1) / tries.length
   }
   if (!best) return null
   // the elevation choices carried from the racks replaced; the building's record of what Generate placed goes with them

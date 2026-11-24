@@ -9,8 +9,7 @@ import { useStoreWithEqualityFn } from 'zustand/traditional'
 import { shallow } from 'zustand/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { useMemo } from 'react'
-import { useDragPreview } from './dragPreview'
-import { useLiveObjects } from './live'
+import { useDragPreview, previewObjects } from './dragPreview'
 
 const isDragging = () => useDragPreview.getState().dragging
 /** useCanvasStore(selector) — shallow-compared — held still during a drag. */
@@ -27,8 +26,12 @@ export const useSettledObjects = () => useSettledStore(s => s.objects)
    it stood when the drag began, so nothing is re-placed per frame — on the drop they are placed once, as before. */
 const feedsLabels = (o) => o && typeof o.type === 'string' && (o.type.startsWith('rack_') || o.type === 'aisle' || o.type === 'column_grid' || o.type.startsWith('fp_'))
 export function useLabelObjects() {
-  const live = useLiveObjects(), settled = useSettledObjects()
+  const settled = useSettledObjects()
   const dragging = useDragPreview(s => s.dragging), ids = useDragPreview(s => s.ids)
   const carriesAll = useMemo(() => !!ids && settled.every(o => !feedsLabels(o) || ids.has(o.id)), [settled, ids])
-  return dragging && !carriesAll ? settled : live
+  /* (gen-lock) held: the drag's offset is not even read — a label component re-rendered every frame redrew its whole
+     layer (every row number) though nothing in it moved */
+  const follow = !dragging || carriesAll
+  const dx = useDragPreview(s => (follow ? s.dx : 0)), dy = useDragPreview(s => (follow ? s.dy : 0))
+  return useMemo(() => (follow ? previewObjects(settled, { ids, dx, dy }) : settled), [follow, settled, ids, dx, dy])
 }

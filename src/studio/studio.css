@@ -69,3 +69,23 @@ fieldset[data-locked] :is(input, select, textarea, button) { opacity:.45; cursor
 
 /* the Add door bar's Row fields sliding in (door-row round, design/doorbar.png) */
 @keyframes st-slide-in { from { opacity: 0; transform: translateX(-6px) } to { opacity: 1; transform: none } }
+
+/* (gen-lock) Cursors, set once for the whole app (CLAUDE.md Rule 9): every text and number field, textarea and editable
+   label shows the I-beam; every button and clickable chip the pointer. :where() keeps these at the lowest weight, so a
+   control's own state still wins (disabled, a locked object's fields, a drag grip's grab). The text cursor is
+   !important: a field never shows anything else while it can be typed in. */
+:where(input:not([type]), input[type="text"], input[type="number"], input[type="search"], input[type="email"],
+  input[type="password"], input[type="tel"], input[type="url"], textarea, [contenteditable]:not([contenteditable="false"]),
+  [data-editable]):not(:disabled):not([aria-disabled="true"]):not(fieldset[data-locked] *) { cursor:text !important; }
+:where(button, [role="button"], [role="tab"], [role="option"], [role="menuitem"], [role="menuitemradio"],
+  [role="menuitemcheckbox"], [role="switch"], [role="checkbox"], [role="radio"], select, summary, a[href], label[for],
+  input[type="checkbox"], input[type="radio"], input[type="color"], input[type="range"], .st-hov, [data-pin]):not(:disabled):not([aria-disabled="true"]) { cursor:pointer; }
+:where(button, select, input, textarea):disabled { cursor:not-allowed; }
+fieldset[data-locked] :is(input, select, textarea, button) { cursor:not-allowed !important; }
+
+/* (gen-lock) the busy lock's card (studio/BusyLock.jsx) fades in after a moment: a quick job never flashes it */
+@keyframes st-busy-in { from { opacity: 0 } to { opacity: 1 } }
+.st-busy-card { animation: st-busy-in .12s ease 250ms both; }
+/* a field's box (cardParts.jsx fieldBox: a narrow input, its unit after it) is the field: the I-beam over all of it, and a
+   press on it puts the caret in (utils/fieldFocus.js) */
+:where(span, div, label):has(> :is(input:not([type]), input[type="text"], input[type="number"], input[type="search"], textarea):not(:disabled):not([readonly])):not(fieldset[data-locked] *) { cursor:text; }

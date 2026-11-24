@@ -32,7 +32,8 @@ import { wallClearOf } from './wallClear'
 import { giveWayIn } from './aisleAccess'
 import { innerOutline } from '../utils/floorGeom'
 import { clearGroup, skipNextAction } from '../utils/rowGroupTool'
-import { regenBuilding, planRegenerate, genPlacedOf } from './regenerate'
+import { regenBuilding, planRegenerateSteps, genPlacedOf } from './regenerate'
+import { runSteps, drainSteps } from '../utils/busyJob'
 
 const GS      = 40   // px per foot — v16b convention (store.gridSize)
 const FLUE_IN = 9    // back-to-back flue gap for double rows
@@ -189,18 +190,20 @@ export function aisleObjectsForRacks(racks) {
  *  translation-invariant). Both gross and usable totals are returned so the
  *  caller can report the comparison, not just the pick. */
 export function pickOrientation(brief, generateLayout, rules = DEFAULT_RULES) {
+  return pickOf(orientationRun(brief, generateLayout, rules, 'horizontal'), orientationRun(brief, generateLayout, rules, 'vertical'))
+}
+/* one orientation's candidate, scored (gen-lock: Generate's job runs the two with a step between them) */
+function orientationRun(brief, generateLayout, rules, orientation) {
   const profile = mheProfile(brief.mhe, rules)
   const L = (brief.lengthFt || 0) * GS, W = (brief.widthFt || 0) * GS
   const building = { type: 'fp_rect', fpVerts: [{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: W }, { x: 0, y: W }] }
-  const runFor = (orientation) => {
-    const b = { ...brief, orientation }
-    const placements = generateLayout(b, rules)
-    const objects = [...placements.map(placementToObject), ...generateFixtures(b, 0, 0), building]
-    const { gross, usable } = usableCapacity(objects, { profile, gridSize: GS, rules })
-    return { orientation, placements, total: gross, usable }
-  }
-  const horizontal = runFor('horizontal')
-  const vertical    = runFor('vertical')
+  const b = { ...brief, orientation }
+  const placements = generateLayout(b, rules)
+  const objects = [...placements.map(placementToObject), ...generateFixtures(b, 0, 0), building]
+  const { gross, usable } = usableCapacity(objects, { profile, gridSize: GS, rules })
+  return { orientation, placements, total: gross, usable }
+}
+function pickOf(horizontal, vertical) {
   const winner = vertical.usable > horizontal.usable ? vertical : horizontal
   return {
     orientation:      winner.orientation,
@@ -226,9 +229,9 @@ export function pickOrientation(brief, generateLayout, rules = DEFAULT_RULES) {
 const snapOf = (s) => snapshotOf(s)   // the store's snapshot, the elevation types with it (utils/elevations.js)
 const HISTORY_CAP = 60   // the store's MAX_HISTORY
 
-function beginOneStep() {
+function beginOneStep({ group = true } = {}) {
   // a new layout: the Row group (and any apply it was offering) is over — its rows are being replaced
-  clearGroup()
+  if (group) clearGroup()
   const s = useCanvasStore.getState()
   const kept = s.history.slice(0, s.historyIndex + 1)
   // the state Generate starts from, exactly as it is now
@@ -256,13 +259,32 @@ function endOneStep(kept) {
 
 // ── Public entry the UI calls. Draws the building, fills it, returns capacity. ──
 export function generateAndPlace(brief, generateLayout = sizingSheetLayout, rules = DEFAULT_RULES) {
-  const kept = beginOneStep()
-  const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
-  const store = useCanvasStore.getState()
-  queue.forEach(o => store.addObject(o))
+  return drain(generateSteps(brief, { generateLayout, rules }))
+}
+
+const drain = drainSteps   // utils/busyJob.js
+
+/* (gen-lock) Generate as steps: each `yield` is a progress point (0…1) the locked job pauses at (utils/busyJob.js) —
+   the store shows the layout as it was and Cancel can stop it there. Nothing is placed until the last step: the whole
+   queue goes in with ONE store write (the store's addObject defaults on each object), one undo step. */
+function* generateSteps(brief, { generateLayout = sizingSheetLayout, rules = DEFAULT_RULES, before = null } = {}) {
+  const kept = beginOneStep({ group: false })
+  before?.()
+  const { queue, ...picked } = yield* buildQueueSteps(brief, generateLayout, rules)
+  yield 0.95
+  clearGroup()
+  placeQueue(queue)
   stampGenPlaced(queue)
   endOneStep(kept)
   return { ...placedCapacity(brief, rules), ...picked }
+}
+
+/* The queue placed with one store write: each object as the store's addObject makes it (its defaults under the
+   object's own fields), in queue order. The undo step is written by endOneStep. */
+function placeQueue(queue) {
+  const s = useCanvasStore.getState()
+  const made = queue.map(o => ({ id: nanoid(), layerId: s.activeLayerId, strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false, ...o }))
+  useCanvasStore.setState({ objects: [...s.objects, ...made] })
 }
 
 /* Draws the building, then returns every object to place inside it, already
@@ -276,7 +298,7 @@ export function generateAndPlace(brief, generateLayout = sizingSheetLayout, rule
  *  returns which orientation was actually used (echoed for a manual pick,
  *  the winner for auto) and, in auto mode, both candidates' totals — the
  *  UI needs these to report the comparison, not just place the winner. */
-function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
+function* buildQueueSteps(brief, generateLayout, rules = DEFAULT_RULES) {
   const store = useCanvasStore.getState()
   /* the wall clearance is measured from the wall's inner face (BUG 76, wallClear.js): the layout needs the
      wall the building is drawn with (the floor plan default) */
@@ -310,11 +332,19 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
   const ox = fp ? fp.x : 0
   const oy = fp ? fp.y : 0
   if (fp) after.markGenerated(fp.id)
+  yield 0.05
 
   // 3) Racks through the ONE factory, then the fixtures the brief implies.
   const auto = brief.orientation === 'auto'
-  const pick = auto ? pickOrientation(brief, generateLayout, rules) : null
+  let pick = null
+  if (auto) {
+    const h = orientationRun(brief, generateLayout, rules, 'horizontal')
+    yield 0.4
+    pick = pickOf(h, orientationRun(brief, generateLayout, rules, 'vertical'))
+    yield 0.75
+  }
   const rawPlacements = auto ? pick.placements : generateLayout(brief, rules)
+  if (!auto) yield 0.6
   const walked = rawPlacements.map(p => {
     const o = placementToObject(p)
     o.x += ox
@@ -325,11 +355,13 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
      already on the floor loses that face's bays there — single beside it, back-to-back elsewhere. */
   const aisleFt = brief.aisleFt ?? rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.aisleFt ?? 12.5
   const zones = useCanvasStore.getState().objects.filter(o => typeof o.type === 'string' && o.type.startsWith('zone_')).map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height }))
+  yield 0.8
   const faced = fp ? dropUnreachableFaces(walked, { poly: innerOutline(fp, GS), zones, aislePx: aisleFt * GS, gridSize: GS, newId: nanoid }) : walked
   /* Every aisle with a way in (aisleAccess.js): rows that run wall to wall with no cross-aisle leave
      a travel path along a wall; a pocket is opened by its cheapest strip (fewest whole bays). */
   const travelFt = Math.min(brief.travelFt ?? rules.mhe?.[brief.mhe || rules.mheDefault || 'reach']?.travelFt ?? 8, aisleFt)
   const placedIds = new Set(faced.map(r => r.id))
+  yield 0.85
   const racks = fp
     ? giveWayIn([...useCanvasStore.getState().objects, ...faced], fp, [...placedIds], { gridSize: GS, travelFt, aisleFt, dir: 1, newId: nanoid, clearIn: wallClearOf(brief) })
       .filter(o => placedIds.has(o.id) || (o.pieceOf && placedIds.has(o.pieceOf)))
@@ -339,6 +371,7 @@ function buildQueue(brief, generateLayout, rules = DEFAULT_RULES) {
     [...racks, ...aisleObjectsForRacks(racks), ...generateFixtures(brief, ox, oy)],
     fp?.id,
   ).map(o => ({ ...o, layerId: layerForType(o.type) }))
+  yield 0.9
   return {
     queue,
     orientation:     auto ? pick.orientation : (brief.orientation ?? 'horizontal'),
@@ -388,38 +421,12 @@ export function parentGenerated(objects, fpId) {
   return objects.map(o => ({ ...o, parentId: fpId }))
 }
 
-const nextFrame = () =>
-  new Promise(resolve => requestAnimationFrame(() => resolve()))
-
-/* Batched placement. Every addObject re-renders the canvas AND pushes a
-   history snapshot (which JSON-stringifies the whole scene), so dropping a
-   full layout in one synchronous loop locks the main thread for as long as it
-   takes — the click just feels dead. Yielding to a frame between batches lets
-   the spinner paint and keeps the window responsive while the layout fills in.
-
-   Returns the same shape the sync entry does. `before`: a write made first, inside the same undo step (Generate's
-   forklift / wall clearance draft into Project settings). */
-export async function generateAndPlaceBatched(
-  brief,
-  { generateLayout = sizingSheetLayout, batch = 10, onProgress, rules = DEFAULT_RULES, before = null } = {},
-) {
-  const kept = beginOneStep()
-  before?.()
-  const { queue, ...picked } = buildQueue(brief, generateLayout, rules)
-  onProgress?.(0)
-  await nextFrame()
-
-  for (let i = 0; i < queue.length; i += batch) {
-    const store = useCanvasStore.getState()
-    for (const o of queue.slice(i, i + batch)) store.addObject(o)
-    onProgress?.(Math.min(1, (i + batch) / queue.length))
-    await nextFrame()
-  }
-
-  stampGenPlaced(queue)
-  endOneStep(kept)
-  onProgress?.(1)
-  return { ...placedCapacity(brief, rules), ...picked }
+/* (gen-lock) Generate under the lock (utils/busyJob.js): the canvas read-only with a progress bar and Cancel over the
+   plan; nothing placed until it reaches 100%, then the whole layout at once, one undo step. Cancel or Esc: the layout
+   exactly as before → { cancelled: true }. `onProgress` (0…1) follows the bar. `before`: a write made first, inside the
+   same undo step (Generate's forklift / wall clearance draft into Project settings). (`batch` is gone: one write.) */
+export function generateAndPlaceBatched(brief, { generateLayout = sizingSheetLayout, onProgress, rules = DEFAULT_RULES, before = null } = {}) {
+  return runSteps('Generating layout', generateSteps(brief, { generateLayout, rules, before }), onProgress)
 }
 
 /* Regenerate racking (generate/regenerate.js, REGENERATE_PLAN.md): the layout's building kept with its zones, text,
@@ -430,7 +437,15 @@ export async function generateAndPlaceBatched(
    `before`: a write the run makes first (Generate's forklift / wall clearance draft into Project settings, Project
    settings' own save) — inside the SAME undo step, so one Ctrl+Z brings the racks and those values back together.
    Nothing fits: that write alone is the step. */
-export function regenerateRacking(brief, { rules = DEFAULT_RULES, beamIn = 96, before = null } = {}) {
+export function regenerateRacking(brief, opts = {}) {
+  return drain(regenerateSteps(brief, opts))
+}
+/** (gen-lock) Regenerate under the lock (utils/busyJob.js) — the same result as regenerateRacking, placed at once when
+ *  it reaches 100%; Cancel or Esc → { cancelled: true }, the layout exactly as before. */
+export function regenerateRackingLocked(brief, opts = {}) {
+  return runSteps('Regenerating racking', regenerateSteps(brief, opts), opts.onProgress)
+}
+function* regenerateSteps(brief, { rules = DEFAULT_RULES, beamIn = 96, before = null } = {}) {
   let start = null
   if (before) {
     const s0 = useCanvasStore.getState()
@@ -443,7 +458,8 @@ export function regenerateRacking(brief, { rules = DEFAULT_RULES, beamIn = 96, b
     orientation: brief.orientation || 'auto', beamIn, palletWIn: brief.palletWIn ?? 40, palletDIn: brief.palletDIn ?? 48,
     mhe: brief.mhe || 'reach', aisleFt: brief.aisleFt ?? 10.5, maxRunFt: brief.maxRunFt ?? 150, wallClearIn: brief.wallClearIn ?? 0, levels: brief.levels ?? 4,
   }
-  const r = planRegenerate(st.objects, fp, settings, { gridSize: GS, newId: nanoid, elevations: st.elevations })
+  const r = yield* planRegenerateSteps(st.objects, fp, settings, { gridSize: GS, newId: nanoid, elevations: st.elevations })
+  yield 0.95
   if (!r) {
     // the write alone, as one step (none when it changed nothing)
     if (start) { if (snapOf(useCanvasStore.getState()) !== start[start.length - 1]) endOneStep(start); else useCanvasStore.setState({ history: start, historyIndex: start.length - 1 }) }

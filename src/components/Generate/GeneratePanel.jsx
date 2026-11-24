@@ -5,7 +5,7 @@ import { generateBlocked } from '../../utils/sectionEdit'
 import { useRackingSettings } from '../../utils/fillTool'
 import { Icon } from '../../studio/Icon'   // the Studio icon set (STUDIO.md §9)
 import { C, MONO, fieldBox, Field, Seg, Btn, Note } from '../../studio/cardParts'
-import { regenerateRacking } from '../../generate/traceGenerate'
+import { regenerateRackingLocked } from '../../generate/traceGenerate'
 import { regenBuilding, regenSummary } from '../../generate/regenerate'
 import { layoutSpec } from '../../generate/sizingLayout'
 import { useCanvasStore } from '../../store/useCanvasStore'
@@ -104,23 +104,34 @@ export function GeneratePanel({ onClose } = {}) {
   }
   const startOver = async () => {
     // the draft written inside the Generate's own undo step, as Regenerate does
-    const next = projectWithDraft(project, draft)
+    const next = projectWithDraft(project, draft), draft0 = draft
     setDraft({})
     setGenerating(true)
     setProgress(0)
     try {
       const outcome = await startOverLayout(useCanvasStore, { rules, mheOptions, onProgress: setProgress, project: next, before: next ? () => commitProject(useCanvasStore, next) : null })
-      setResult(outcome)
+      // (gen-lock) cancelled: the layout as before, the draft back in the fields
+      if (outcome?.cancelled) setDraft(draft0)
+      else if (outcome) setResult(outcome)
     } finally {
       setGenerating(false)
     }
   }
-  const regenerate = () => {
+  const regenerate = async () => {
     // the draft written inside the regenerate's own undo step: one Ctrl+Z brings the racks and the values back together
     const next = projectWithDraft(project, draft), pr = next || project
+    const kept = draft
     setDraft({})
-    const outcome = regenerateRacking(genBrief(pr, mheOptions), { rules, beamIn: useRackingSettings.getState().beamIn ?? 96, before: next ? () => commitProject(useCanvasStore, next) : null })
-    setResult(outcome ? { ...outcome, regenerated: true } : { failed: true })
+    setGenerating(true)
+    setProgress(0)
+    try {
+      // (gen-lock) under the lock (utils/busyJob.js): placed at once at 100%; cancelled → the layout as before
+      const outcome = await regenerateRackingLocked(genBrief(pr, mheOptions), { rules, beamIn: useRackingSettings.getState().beamIn ?? 96, before: next ? () => commitProject(useCanvasStore, next) : null, onProgress: setProgress })
+      if (outcome?.cancelled) setDraft(kept)
+      else setResult(outcome ? { ...outcome, regenerated: true } : { failed: true })
+    } finally {
+      setGenerating(false)
+    }
   }
 
   const fieldsGrid = { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }

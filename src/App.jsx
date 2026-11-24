@@ -4,6 +4,7 @@ import { useCanvasStore } from './store/useCanvasStore'
 import { useShallow } from 'zustand/react/shallow'
 import { FloatingToolbar } from './components/LeftPanel/FloatingToolbar'
 import { StudioFrame } from './studio/StudioFrame'
+import { BusyLock } from './studio/BusyLock'   // (gen-lock) the lock while Generate / Regenerate / Fill section runs
 import './studio/studio.css'
 import { Canvas2 } from './canvas2/Canvas2'
 import { ColumnCheckProvider } from './generate/useColumnCheck'
@@ -16,6 +17,7 @@ import { installRowEditKeeper } from './utils/rowEditKeeper'
 import { installRowGroupWatcher } from './utils/rowGroupTool'
 import { installPairKeeper } from './utils/pairCarryOn'
 import { trackCanvasPointer } from './utils/pasteAt'
+import { installFieldFocus } from './utils/fieldFocus'
 import { installLayerKeeper } from './utils/layers'
 import { installLevelsKeeper } from './utils/rackLevels'
 import { installElevationsKeeper } from './utils/elevations'
@@ -82,6 +84,9 @@ if (import.meta.hot) import.meta.hot.dispose(() => stopProjectKeeper())
 /* Paste lands at the mouse cursor: remember where it last was over the canvas. */
 const stopPointer = trackCanvasPointer(window)
 if (import.meta.hot) import.meta.hot.dispose(() => stopPointer())
+/* (gen-lock) a field's whole box is the field: a press on it puts the caret in (utils/fieldFocus.js) */
+const stopFieldFocus = installFieldFocus(window)
+if (import.meta.hot) import.meta.hot.dispose(() => stopFieldFocus())
 
 // Simple placeholder for apps that don't exist yet (Inspect / Label).
 function Placeholder({ title, onBack }) {
@@ -156,6 +161,7 @@ export default function App() {
         </div>
         <FloatingToolbar studio />
         <StudioFrame onHub={() => setView('hub')} />
+        <BusyLock />
       </ColumnCheckProvider>
       </RulesProvider>
     </div>

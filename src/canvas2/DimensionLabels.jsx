@@ -21,6 +21,7 @@ import { aisleLabelOps, clearanceOpsAll, clearanceSolids } from '../render/label
 import { crossAisleLabels } from './crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { isEmptySide } from '../utils/bayEmpty'
+import { useFlued } from './dragPreview'   // (gen-lock)
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
    CanvasUI.jsx's RackLabels/FpSegmentDimLabels and CanvasOverlays.jsx's live
@@ -92,7 +93,8 @@ export function LabelPill({ cx, cy, text, fontSize, zoom, color = '#4a9eff', bg 
 /* ── Rack dimension labels — beam/bay lengths, total length, depth, arm/lane
    specs. Shown only while the rack is selected (or printing, which canvas2
    has no equivalent of yet — the caller gates this on `selected`). */
-export function RackLabels({ obj, zoom, gridSize }) {
+export function RackLabels({ obj: stored, zoom, gridSize }) {
+  const obj = useFlued(stored)   // (gen-lock) the pair dragged with its live flue: as drawn now
   // (Rule 8 — never over each other) the row numbers as drawn now: an end label (a depth, an arm) keeps off them
   const chips = useRowPlaces(true)
   if (!RACK_LABEL_TYPES.has(obj.type)) return null
