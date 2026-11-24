@@ -9598,8 +9598,23 @@ describe('REG — the hand check by real clicks', () => {
       } else rec('tool: Esc cancels', 'n/a', 'placed at once')
       const dlg = L.page.getByRole('button', { name: 'Place grid' }); if (await dlg.count()) { await dlg.click(); await wait(300) }
       rec('tool: back to Select', (await toolNow()) === 'select', await toolNow())
-      rec('tool: double-click keeps it on', 'n/a', 'library items place one at a time')
       const fresh = await L.S('return S.getState().objects.filter(o => !arg.includes(o.id) && o.type !== "aisle").map(o => ({ id: o.id, type: o.type }))', [...before])
+      /* (rack-basics) a rack type that follows the mouse (Racking: Selective, Back-to-back, Double-deep — rack-design) stays
+         on after a double-click: two clicks below the building place two, Esc ends it, back to Select; both undone after. The
+         rest place one at a time (placed at once, at the view's centre). */
+      if (placing && section === 'Racking') {
+        const n0 = (await L.S('return S.getState().objects.filter(o => o.type !== "aisle").length'))
+        await L.page.locator('[data-island="rail"]').getByRole('button', { name: section, exact: true }).click(); await wait(300)
+        await L.page.getByRole('menu', { name: section + ' library' }).getByRole('menuitem', { name: label, exact: true }).dblclick(); await wait(500)
+        for (const x of [400, 1000]) { await L.page.mouse.move(x, 790); await wait(150); await L.page.mouse.click(x, 790); await wait(300) }
+        const still = await L.S('return import("/src/utils/placement.js").then(M => !!M.usePlacement.getState().active)')
+        await L.page.keyboard.press('Escape'); await wait(200)
+        const n1 = (await L.S('return S.getState().objects.filter(o => o.type !== "aisle").length'))
+        const ended = !(await L.S('return import("/src/utils/placement.js").then(M => !!M.usePlacement.getState().active)'))
+        rec('tool: double-click keeps it on', n1 - n0 === 2 && still && ended && (await toolNow()) === 'select', { placed: n1 - n0, stillOnAfterTwo: still, endedByEsc: ended })
+        await L.page.mouse.move(5, 300)
+        for (let k = 0; k < n1 - n0; k++) { await L.page.keyboard.press('Control+z'); await wait(250) }
+      } else rec('tool: double-click keeps it on', 'n/a', placing ? 'library items place one at a time' : 'placed at once, at the view’s centre')
       return fresh.length ? fresh[fresh.length - 1].id : null
     }
     /** A draw tool by real clicks from the Draw flyout: one shape, then Select; Esc cancels one being drawn; a double-click
@@ -10395,6 +10410,63 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.S('return S.getState().objects.find(q => q.id === "rackrow1").beams.length')).toBe(5)
       // saved: it goes back out as it came in
       expect(await L.S('const j = JSON.parse(SL.serializeScene(S.getState())); const r = j.objects.find(q => q.id === "rackrow1"); return [r.type, r.label, r.beams.length]')).toEqual(['rack_row', 'Rack Row (multi-bay)', 5])
+    }, T)
+
+
+    /* ── rack-basics: the R numbers stay right through duplicate, delete, undo and redo ── */
+    it('REG-rack-numbers (click): the rack numbers stay R1…Rn — every drawn number a line\'s, none twice, the count the lines\' — after Ctrl+D on a rack, Delete on a rack, and each undo and redo; one undo puts back the numbers exactly as they were', async () => {
+      await open()
+      const fp = await fpOf()
+      await L.S('const z = 0.1; S.setState({ zoom: z, panX: 560 - (arg.x + arg.width / 2) * z, panY: 450 - (arg.y + arg.height / 2) * z })', fp); await L.page.waitForTimeout(300)
+      // the numbers drawn (R6, or R2–R3 for both lines of an up-and-down pair) and the lines there are
+      const numbers = () => L.page.evaluate(() => {
+        const st = window.Konva.stages[0]; st.draw()
+        const out = []
+        for (const t of st.find('.rack-line-label')) {
+          if (!t.isVisible()) continue
+          const m = /^R(\d+)(?:–R(\d+))?$/.exec(t.text()); if (!m) { out.push('?' + t.text()); continue }
+          for (let k = +m[1]; k <= +(m[2] || m[1]); k++) out.push(k)
+        }
+        return out.sort((a, b) => a - b)
+      })
+      const lines = () => L.S('return import("/src/utils/rackLines.js").then(R => R.rackLinesNow(S.getState().objects, S.getState().gridSize || 40).length)')
+      const sound = async (what) => {
+        const n = await numbers(), N = await lines()
+        const dup = n.filter((v, i) => i && v === n[i - 1])
+        expect([what, n.filter(v => typeof v !== 'number'), dup, n.every(v => v >= 1 && v <= N), n.length >= Math.floor(N * 0.8)]).toEqual([what, [], [], true, true])
+        return { n, N }
+      }
+      const s0 = await sound('as opened')
+      // a rack in the middle of the plan, selected by a click
+      const r = await L.S('const st = S.getState(), rs = st.objects.filter(o => o.type === "rack_row"); const o = rs[Math.floor(rs.length / 2)]; const b = H.worldBoundsOf(o, st.objects); return { id: o.id, x: b.x + b.width / 2, y: b.y + b.height / 2 }')
+      await L.click(r); await L.page.waitForTimeout(200)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([r.id])
+      // Ctrl+D: one more rack (placed with a click on open floor when the copy follows the mouse), numbered with the rest —
+      // a line more, or the same lines when the copy runs on in a line already there
+      const racks = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).length')
+      const k0 = await racks()
+      await L.page.keyboard.press('Control+d'); await L.page.waitForTimeout(400)
+      if (await L.S('return !!PL.usePlacement.getState().active')) {
+        const at = await L.toScreen(await L.floorPoint({ x: r.x, y: r.y }))
+        await L.page.mouse.move(at.x, at.y); await L.page.waitForTimeout(150); await L.page.mouse.click(at.x, at.y); await L.page.waitForTimeout(400)
+      }
+      expect(await racks()).toBe(k0 + 1)
+      const s1 = await sound('after duplicate')
+      expect([s0.N, s0.N + 1]).toContain(s1.N)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      expect(await sound('after undoing the duplicate')).toEqual(s0)
+      await L.page.keyboard.press('Control+y'); await L.page.waitForTimeout(400)
+      expect(await sound('after redoing it')).toEqual(s1)
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      // Delete: one rack fewer, still R1…Rn with no gap — a line fewer, or the same lines when it was one piece of a line cut by a cross-aisle
+      await L.click(r); await L.page.waitForTimeout(200)
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(400)
+      const s2 = await sound('after delete')
+      expect(await racks()).toBe(k0 - 1)
+      expect([s0.N - 1, s0.N]).toContain(s2.N)
+      expect(Math.max(...s2.n)).toBeLessThanOrEqual(s2.N)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      expect(await sound('after undoing the delete')).toEqual(s0)
     }, T)
 
     onceIt('REG-pixel-ratio (click): the canvas draws at the screen\'s pixel density and follows it when it changes (browser zoom, another screen): every layer at 1, then at 2 after the change, then back at 1', async () => {
