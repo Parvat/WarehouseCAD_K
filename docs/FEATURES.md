@@ -108,9 +108,9 @@ Users forgive a plain interface. They won't forgive frustrating drawing. So, in 
 
 | Item | Phase | Status |
 |---|---|---|
-| **All rack types: selective, double-deep, drive-in, drive-thru, push-back, pallet flow, carton flow, cantilever, shelving** — each drawn, filled, generated, elevated, in BOM, Tally, PDF and Check | 1 | Partial — selective (single, back-to-back) end to end; others placeable from the library only; no double-deep or carton flow |
+| **All rack types: selective, double-deep, drive-in, drive-thru, push-back, pallet flow, carton flow, cantilever, shelving** — each drawn, filled, generated, elevated, in BOM, Tally, PDF and Check | 1 | Partial — selective (single, back-to-back) end to end; others placeable from the library only; every type drawn by colour family, no fill, slots and face words (rack-design); carton flow a disabled "Coming soon" row |
 | Mezzanine | 2 | Partial — placeable library block only |
-| Object library: racks, equipment, structural, safety; frequently used tools and objects pinned | 1 | Partial — library rail + flyout done; no pinning in the Studio flyout |
+| Object library: racks, equipment, structural, safety; frequently used tools and objects pinned | 1 | Partial — library rail + flyout done; the Racking flyout rebuilt: Pallet · Lane · Flow · Other, family glyphs, search, keys, tooltips, double-click keeps on (rack-design); no pinning in the Studio flyout |
 | Custom user objects (save your own, reuse across projects) | 2 | Partial — store actions exist; panel not mounted |
 | Display: beam colour, upright colour, line style per rack (CLASS) | 2 | Todo |
 | Auto layout with staging, office and dock areas | 2 | Partial — Generate works around placed zones; doesn't create them |

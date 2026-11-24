@@ -68,7 +68,7 @@ describe('RD — the racking library', () => {
     expect(RACK_LIBRARY.map(([g, rows]) => [g, rows.map(r => r.name)])).toEqual([
       ['Pallet', ['Selective', 'Back-to-back', 'Double-deep']],
       ['Lane', ['Drive-in', 'Drive-through']],
-      ['Flow', ['Push-back', 'Pallet flow']],
+      ['Flow', ['Push-back', 'Pallet flow', 'Carton flow']],   // Carton flow: not built yet, a disabled row
       ['Other', ['Cantilever', 'Shelving', 'Mezzanine']],
     ])
   })
@@ -78,12 +78,12 @@ describe('RD — the racking library', () => {
       Selective: 'Single row, every pallet reachable', 'Back-to-back': 'Two rows sharing a flue', 'Double-deep': 'Two pallets deep, reach truck',
       'Drive-in': 'One entry, last in first out', 'Drive-through': 'Entry both ends, first in first out',
       'Push-back': 'Carts, load and pick one face', 'Pallet flow': 'Load back, pick front, gravity',
-      Cantilever: 'Arms for long loads', Shelving: 'Hand-pick units', Mezzanine: 'Raised floor area',
+      'Carton flow': 'Coming soon', Cantilever: 'Arms for long loads', Shelving: 'Hand-pick units', Mezzanine: 'Raised floor area',
     })
   })
 
-  it('RD-library-items: every row is a library item that exists today (none is "Coming soon"); Rack Row (multi-bay) is left out of the flyout but still in the library, so a saved one loads', () => {
-    for (const [, rows] of RACK_LIBRARY) for (const r of rows) expect([r.name, storage.includes(r.id)]).toEqual([r.name, true])
+  it('RD-library-items: every row but Carton flow is a library item that exists today; Carton flow (not built — FEATURES.md) has none, so it shows disabled, "Coming soon"; Rack Row (multi-bay) is left out of the flyout but still in the library, so a saved one loads', () => {
+    for (const [, rows] of RACK_LIBRARY) for (const r of rows) expect([r.name, storage.includes(r.id)]).toEqual([r.name, r.name !== 'Carton flow'])
     expect([...RACK_LIBRARY_HIDDEN]).toEqual(['rack_row'])
     expect(storage).toContain('rack_row')
     // every storage item is either a row or hidden: nothing dropped by accident

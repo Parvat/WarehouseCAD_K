@@ -1,6 +1,8 @@
 # Trace CAD — where to pick up
 
 Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
+
+**2026-11-24 overnight run:** rack-design, rack-design-match and rack-basics are done and combined on `overnight-rack-design` (full suite green). Waiting for PP's hand-check and the questions in [MORNING.md](MORNING.md).
 Read this first, then [EPICS.md](EPICS.md) (the plan), [FEATURES.md](FEATURES.md) (every feature and its status),
 CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
 
@@ -12,7 +14,7 @@ CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
 | Column grid | Place dialog (spacing, columns on walls yes/no, offsets, size); card edits live; gridline bubbles and chain; a building resize keeps the spacing |
 | Doors | Dock, man and drive-in doors; Add door bar with live gaps and typed distances; Door row (Gap, Count, drag to fill); per-wall chain and numbered badges; clear spaces |
 | Racking | Selective single and back-to-back, end to end: drawn, Fill (a box or a section), Generate (the whole building), per-bay beams, levels, flue, row groups, split, cross aisles, tunnels |
-| Rack types | One registry, `utils/rackTypes.js` (R1). The other types can be placed from the library only |
+| Rack types | One registry, `utils/rackTypes.js` (R1). The other types can be placed from the library only. Every type is drawn by colour family with no fill, dashed pallet slots and face words, on the plan and the PDF (rack-design) |
 | Sections and zones | Named sections with a legend, each with its own equipment, Fill section, a fence or wall boundary; zones (office, staging, washroom, custom) cut the racks under them |
 | Elevations | Auto best fit from the clear height; front and side view; ceiling, sprinkler and max-load lines; types per row or bay |
 | Capacity | Positions, usable and lost (narrow aisle, column, zone), positions per 1,000 sq ft, Tally |

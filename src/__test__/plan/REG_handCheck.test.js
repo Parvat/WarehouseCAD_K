@@ -10124,7 +10124,8 @@ describe('REG — the hand check by real clicks', () => {
     const libraryItems = async (section) => {
       await open()
       await L.page.locator('[data-island="rail"]').getByRole('button', { name: section, exact: true }).click(); await wait(300)
-      const names = await L.page.getByRole('menu', { name: section + ' library' }).getByRole('menuitem').allTextContents()
+      // (rack-design) a disabled row (a rack type not built yet: Carton flow, "Coming soon") has nothing to place: left out
+      const names = await L.page.getByRole('menu', { name: section + ' library' }).getByRole('menuitem').evaluateAll(bs => bs.filter(b => b.getAttribute('aria-disabled') !== 'true').map(b => b.textContent))
       await L.page.keyboard.press('Escape')
       return names.map(n => libraryItem(section, n))
     }
@@ -10317,7 +10318,13 @@ describe('REG — the hand check by real clicks', () => {
       expect(look.w).toBeLessThanOrEqual(170); expect(look.w).toBeGreaterThanOrEqual(130)
       expect(look.gapRight).toBeLessThanOrEqual(24)
       expect([look.fits, look.rowH, look.glyph, look.fs]).toEqual([true, [28], '20×16', '13px'])
-      expect(look.colours).toEqual(['#8FA0D8', '#8FA0D8', '#8FA0D8', '#5BC193', '#5BC193', '#E3A456', '#E3A456', '#B79BE0', '#B79BE0', '#A9AFAA'])
+      expect(look.colours).toEqual(['#8FA0D8', '#8FA0D8', '#8FA0D8', '#5BC193', '#5BC193', '#E3A456', '#E3A456', '#E3A456', '#B79BE0', '#B79BE0', '#A9AFAA'])
+      // a rack type not built yet: a disabled row, its tooltip Coming soon
+      const soon = menu.getByRole('menuitem', { name: 'Carton flow' })
+      expect(await soon.isDisabled()).toBe(true)
+      await soon.hover(); await L.page.waitForTimeout(450)
+      expect(await L.page.getByRole('tooltip').textContent()).toBe('Coming soon')
+      await L.page.mouse.move(5, 890); await L.page.waitForTimeout(100)
       expect(await menu.getByRole('group').evaluateAll(g => g.map(x => x.getAttribute('aria-label')))).toEqual(['Pallet', 'Lane', 'Flow', 'Other'])
       expect(await menu.getByRole('menuitem').allTextContents()).not.toContain('Rack Row (multi-bay)')
       expect(await L.page.getByRole('searchbox', { name: 'Search racking' }).count()).toBe(1)
@@ -10343,7 +10350,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.keyboard.press('ArrowUp'); expect(await activeNow()).toBe('Drive-through')
       // Esc clears the search (all rows back), then closes
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
-      expect([await menu.count(), (await menu.getByRole('menuitem').allTextContents()).length]).toEqual([1, 10])
+      expect([await menu.count(), (await menu.getByRole('menuitem').allTextContents()).length]).toEqual([1, 11])
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
       expect(await menu.count()).toBe(0)
       // Enter picks: "back" → Back-to-back first; it follows the mouse, a click places one, then Select

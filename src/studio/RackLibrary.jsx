@@ -25,6 +25,8 @@ export const RACK_LIBRARY = [
   ['Flow', [
     { id: 'rack_pushback', name: 'Push-back', tip: 'Carts, load and pick one face', icon: 'pushback' },
     { id: 'rack_pallet_flow', name: 'Pallet flow', tip: 'Load back, pick front, gravity', icon: 'flow' },
+    // not built yet (FEATURES.md: carton flow) — a disabled row, "Coming soon"; no library item, nothing to place
+    { id: 'rack_carton_flow', name: 'Carton flow', tip: 'Coming soon', icon: 'flow' },
   ]],
   ['Other', [
     { id: 'rack_cantilever', name: 'Cantilever', tip: 'Arms for long loads', icon: 'cantilever' },
@@ -134,12 +136,11 @@ export function RackLibrary({ items, onPick, onKeep = null, onClose }) {
             idx += 1
             const i = idx, f = flat[i], on = i === active
             return (
-              <button key={r.id} type="button" role="menuitem" aria-label={r.name} disabled={!f.item} data-active={on ? '' : undefined}
-                title={f.item ? undefined : 'Coming soon'}
+              <button key={r.id} type="button" role="menuitem" aria-label={r.name} aria-disabled={f.item ? undefined : 'true'} data-active={on ? '' : undefined}
                 onMouseEnter={(e) => { if (f.item) setActive(i); showTip(e, f) }} onMouseLeave={hideTip}
                 onClick={(e) => { hideTip(); if (e.detail > 1) return; pick(f) }}
                 onDoubleClick={() => { hideTip(); pick(f, true) }}
-                style={{ height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px 0 8px', border: 0, borderRadius: 6, background: on ? '#2C312E' : 'transparent', color: '#E8EAE6', fontSize: 13, textAlign: 'left', whiteSpace: 'nowrap' }}>
+                style={{ height: 28, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px 0 8px', border: 0, borderRadius: 6, background: on ? '#2C312E' : 'transparent', color: '#E8EAE6', fontSize: 13, textAlign: 'left', whiteSpace: 'nowrap', ...(f.item ? null : { opacity: 0.45, cursor: 'not-allowed' }) }}>
                 <RackGlyph icon={r.icon} color={rackIconColor(g, r)} />
                 <span>{r.name}</span>
               </button>
