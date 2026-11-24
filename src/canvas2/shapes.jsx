@@ -6,11 +6,13 @@ import { drawnGeom, dashOf, textGeom, fillPaint, hatchSegments, drawnBox, rectLa
 import { useCanvasStore } from '../store/useCanvasStore'
 import { getObjectBounds, insetPolygon } from '../utils/canvas'
 import { expandColumnGrid } from '../generate/columnCheck'
-import { uprightXs, cantileverGeom, uprightDrawRects, travelArrowGeom, rackDrawOps } from '../render/rackOps'
+import { uprightXs, cantileverGeom, uprightDrawRects, arrowGeom, rackDrawOps } from '../render/rackOps'
+import { RACK_SELECT, RACK_SELECT_GAP_PX, RACK_SELECT_PX, RACK_HANDLE_PX } from '../render/rackFamily'
 import { columnGridOps } from '../render/columnDraw'
 import { useLiveObjects, useView } from './live'
 import { gridBuilding } from '../utils/columnGrid'
 import { isAxisAligned, deviceScale, minDevicePx, snapBorderRects, snapFillRect } from '../render/pixelSnap'
+import { paintHairlines } from '../render/hairlines'   // (rack-design)
 import { labelScale } from '../render/labelSize'
 import { isDoor } from '../utils/doorTool'
 
@@ -120,7 +122,10 @@ function paintSnapped(ctx, fill, snapped, fallback) {
   c.setTransform(t)
 }
 
+const RACK_FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
+
 export function Ops({ ops, opacity = 1, listening = false, lz = DEFAULT_LZ }) {
+  void lz   // (rack-design) nothing a rack draws follows the Label size now: its arrows and words are real sizes
   if (!ops || !ops.length) return null
   return (
     <>
@@ -138,9 +143,12 @@ export function Ops({ ops, opacity = 1, listening = false, lz = DEFAULT_LZ }) {
               sceneFunc={(ctx) => {
                 const c = ctx._context
                 if (o.fill) { c.fillStyle = o.fill; c.fillRect(o.x, o.y, o.w, o.h) }
+                if (!o.stroke) return
+                /* (rack-design) the outline is a SCREEN width (RACK_LINE.edge), on whole device pixels */
+                const pr = pixelRatioOf(ctx)
                 paintSnapped(ctx, o.stroke,
-                  (m, minPx) => snapBorderRects(m, o, o.strokeWidth, minPx),
-                  (c2, floor) => { c2.strokeStyle = o.stroke; c2.lineWidth = Math.max(o.strokeWidth, floor); c2.strokeRect(o.x, o.y, o.w, o.h) })
+                  (m, minPx) => snapBorderRects(m, o, (o.strokeWidth * pr) / (deviceScale(m) || 1), minPx),
+                  (c2, floor) => { c2.strokeStyle = o.stroke; c2.lineWidth = Math.max(o.strokeWidth * floor, floor); c2.strokeRect(o.x, o.y, o.w, o.h) })
               }}
               hitFunc={(ctx, shape) => { ctx.beginPath(); ctx.rect(o.x, o.y, o.w, o.h); ctx.closePath(); ctx.fillShape(shape) }} />
           )
@@ -179,17 +187,48 @@ export function Ops({ ops, opacity = 1, listening = false, lz = DEFAULT_LZ }) {
                 })} />
           )
         }
-        /* Travel arrows are a legend mark: drawing size, by the Label size
-           scale (travelArrowGeom, the same geometry the PDF prints). */
+        /* (rack-design) hairlines and dashed pallet slots: a fixed SCREEN width, each straight line on the half pixel
+           (an odd device width) or the whole pixel (even), so a 1 px line is one sharp pixel at every zoom. */
+        if (o.op === 'lines' || o.op === 'slots') {
+          return (
+            <Shape key={i} name={o.name || (o.op === 'slots' ? 'rack-slots' : 'rack-lines')} listening={false} perfectDrawEnabled={false}
+              opacity={(o.opacity ?? 1) * opacity}
+              sceneFunc={(ctx) => paintHairlines(ctx, o)} />
+          )
+        }
+        /* posts (a mezzanine's): round, at their real size, never under 1.5 screen px */
+        if (o.op === 'dots') {
+          return (
+            <Shape key={i} name="rack-dots" listening={false} perfectDrawEnabled={false} opacity={(o.opacity ?? 1) * opacity}
+              sceneFunc={(ctx) => {
+                const c = ctx._context, t = c.getTransform(), s = Math.hypot(t.a, t.b) || 1, pr = pixelRatioOf(ctx)
+                const r = Math.max(o.r, (1.5 * pr) / s)
+                c.fillStyle = o.fill; c.beginPath()
+                for (let k = 0; k < o.pts.length; k += 2) { c.moveTo(o.pts[k] + r, o.pts[k + 1]); c.arc(o.pts[k], o.pts[k + 1], r, 0, Math.PI * 2) }
+                c.fill()
+              }} />
+          )
+        }
+        /* words at a real height (ENTRY, LOAD, PICK, a shelving unit's shelves, MEZZANINE): drawn like geometry */
+        if (o.op === 'text') {
+          const w = Math.max(o.size * o.text.length * 0.8, o.size * 2)
+          return (
+            <Text key={i} name="rack-text" x={o.x - w / 2} y={o.y} width={w} align="center" text={o.text}
+              fontSize={o.size} fontFamily={RACK_FONT} fontStyle={o.bold ? '700' : '600'} fill={o.color}
+              {...(o.halo ? { stroke: '#FFFFFF', strokeWidth: o.size * 0.35, fillAfterStrokeEnabled: true, lineJoin: 'round' } : null)}
+              opacity={(o.opacity ?? 1) * opacity} listening={false} perfectDrawEnabled={false} />
+          )
+        }
+        /* travel arrows (rack-design): in WORLD size, inside the lane's front pallet (arrowGeom, as the PDF prints
+           them); the shaft a screen width */
         if (o.op === 'arrows') {
           return (
-            <Shape key={i} listening={false} perfectDrawEnabled={false}
+            <Shape key={i} name="rack-arrows" listening={false} perfectDrawEnabled={false} opacity={(o.opacity ?? 1) * opacity}
               sceneFunc={(ctx) => {
-                const g = travelArrowGeom(o, lz)
-                const c = ctx._context
+                const c = ctx._context, t = c.getTransform(), s = Math.hypot(t.a, t.b) || 1, pr = pixelRatioOf(ctx)
                 c.strokeStyle = o.color; c.fillStyle = o.color
-                c.lineWidth = g.strokeWidth
-                for (const a of g.arrows) {
+                c.lineWidth = (o.strokeWidth * pr) / s
+                for (const a of arrowGeom(o)) {
                   c.beginPath(); c.moveTo(a.shaft[0], a.shaft[1]); c.lineTo(a.shaft[2], a.shaft[3]); c.stroke()
                   c.beginPath(); c.moveTo(a.head[0], a.head[1]); c.lineTo(a.head[2], a.head[3]); c.lineTo(a.head[4], a.head[5])
                   c.closePath(); c.fill()
@@ -731,8 +770,27 @@ export function outlineBounds(obj, gridSize = 40, objects = []) {
    aisle can omit it exactly as before. */
 export function SelectionOutline({ obj: stored, gridSize = 40, objects = [], dashed = false }) {
   const obj = useFlued(stored)   // (gen-lock) the pair dragged with its live flue: as drawn now
+  const zoom = useView().zoom || 1
   /* a row whose bays are picked: thin and dashed (STUDIO.md §7); a selected row: the 2px solid outline */
   const line = dashed ? { strokeWidth: 1, dash: [5, 4] } : { strokeWidth: 2 }
+  /* (rack-design) a selected rack keeps its own family lines: the selection is a 2 px outline 4 px outside it, and a
+     square white handle edged in the selection blue at each corner (design/rack-plan-colour.png R1) */
+  if (typeof obj.type === 'string' && obj.type.startsWith('rack_')) {
+    const b = outlineBounds(obj, gridSize, objects)
+    if (!b) return null
+    const g = dashed ? 0 : RACK_SELECT_GAP_PX / zoom, x0 = b.x - g, y0 = b.y - g, x1 = b.x + b.width + g, y1 = b.y + b.height + g
+    const hs = RACK_HANDLE_PX / zoom
+    return (
+      <Group name={'sel:' + obj.id} listening={false} {...spin(obj)}>
+        <Rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} stroke={RACK_SELECT} {...(dashed ? line : { strokeWidth: RACK_SELECT_PX })}
+          strokeScaleEnabled={false} perfectDrawEnabled={false} shadowForStrokeEnabled={false} listening={false} />
+        {!dashed && [[x0, y0], [x1, y0], [x0, y1], [x1, y1]].map(([x, y], i) => (
+          <Rect key={i} name="sel-corner" x={x - hs / 2} y={y - hs / 2} width={hs} height={hs} fill="#FFFFFF" stroke={RACK_SELECT} strokeWidth={1}
+            strokeScaleEnabled={false} perfectDrawEnabled={false} shadowForStrokeEnabled={false} listening={false} />
+        ))}
+      </Group>
+    )
+  }
   /* (d1-bar, design/selbar.png) a drawn line, rectangle, circle or polyline selected: only its own handles — no outer
      box, no second rectangle, the shape in its own colour (ResizeHandlesOverlay; DrawBar.jsx ShapePointHandles) */
   if (isDrawn(obj)) return <DrawnMarks obj={obj} />

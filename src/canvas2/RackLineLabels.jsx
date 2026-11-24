@@ -27,8 +27,9 @@ import { checkedNos } from '../studio/tally'
 import { lineNamer, lineSections, chipText } from '../utils/lineNames'
 import { buildingOutline } from '../utils/floorGeom'
 import { useLabelObjects } from './settled'   // (drag-perf-bar)
+import { RACK_NUMBER } from '../render/rackFamily'   // (rack-design) the rack numbers' colour
 
-const WORDS = '#767C74', TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
+const WORDS = RACK_NUMBER, TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 /** The label's size in drawing units: the aisle labels' 10 at the Label size. */
 export const ROW_LABEL_PX = 10
 /** The labels' font size (world px) at their label scale `lz` (utils/textSizes.js 'row' — CLAUDE.md Rule 8, the CAD text

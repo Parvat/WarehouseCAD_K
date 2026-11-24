@@ -54,7 +54,8 @@ import { getCanvasContainerSize } from '../../utils/canvasContainer'
 import { PALETTE_COLORS } from '../../constants'
 import { PEN_TYPES, PEN_ORDER, clampPenWidth, penDefaultWidth, loadPenPrefs, savePenPrefs } from '../../utils/freehand'
 import { dropRotation } from '../../utils/rowRotation'
-import { startPlacement } from '../../utils/placement'
+import { startPlacement, usePlacement } from '../../utils/placement'
+import { RackLibrary, RACK_LIBRARY_HIDDEN } from '../../studio/RackLibrary'   // (rack-design)
 import { setLibraryPick } from '../../studio/selectionActions'
 import { nanoid } from 'nanoid'
 import { openPlaceGrid } from '../../studio/PlaceColumnGrid'
@@ -938,7 +939,7 @@ export function FloatingToolbar({ studio = false } = {}) {
   }, [focusSearch, collapsed])
 
   /* place object — unchanged logic */
-  const placeObject = useCallback((catItem) => {
+  const placeObject = useCallback((catItem, placeOpts = null) => {
     const item    = catItem
     const variant = item.variants?.[0] || { w:item.w||10, h:item.h||10 }
     const { w: cw, h: ch } = getCanvasContainerSize()
@@ -981,7 +982,7 @@ export function FloatingToolbar({ studio = false } = {}) {
     /* a single or double row — and a zone — follows the mouse until a click places it
        (utils/placement.js); everything else is dropped at the view centre */
     const place = (fields) => (ROW_TYPES.has(item.type) || item.type.startsWith('zone_')
-      ? startPlacement(useCanvasStore, [{ id: nanoid(), layerId: layerForType(item.type), strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false, ...fields }], { at: { x: wx, y: wy } })
+      ? startPlacement(useCanvasStore, [{ id: nanoid(), layerId: layerForType(item.type), strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false, ...fields }], { at: { x: wx, y: wy }, ...(placeOpts || {}) })
       : addObject(fields))
     place({
       type:item.type, x, y:y2, width:w, height:h,
@@ -1082,6 +1083,28 @@ export function FloatingToolbar({ studio = false } = {}) {
     : item.catId === 'fp'     ? selectFp(item)
     : selectItem(item)
 
+  /* (rack-design — Rule 9: a double-click on a tool keeps it on) a rack type double-clicked in the library stays on: each
+     click on the plan places one and the next follows the mouse, until Esc (or another tool or placement) ends it. Only
+     the types that follow the mouse (a selective, back-to-back or double-deep rack) — the rest drop at the view's centre
+     at once, so a double-click places one, as before. */
+  const keepRef = useRef(null)
+  const keepItem = item => {
+    if (!usePlacement.getState().active || !ROW_TYPES.has(item.type)) return
+    keepRef.current = item
+    // the placement the first click started ends the keep when it is cancelled (Esc, another tool, another placement)
+    const a = usePlacement.getState().active
+    usePlacement.setState({ active: { ...a, onCancel: () => { keepRef.current = null; a.onCancel?.() } } })
+  }
+  useEffect(() => usePlacement.subscribe((s, prev) => {
+    if (!(prev.active && !s.active && keepRef.current)) return
+    // placed (a cancel clears keepRef in its onCancel, which runs just after this): the next one follows the mouse
+    setTimeout(() => {
+      const it = keepRef.current
+      if (!it || usePlacement.getState().active) return
+      placeObject(it, { onCancel: () => { keepRef.current = null } })
+    }, 0)
+  }), [placeObject])
+
   /* Search and the pinned tray both need to resolve an id back to an item, and
      shapes and floor plans are pinnable too — so look across all three lists. */
   const everyItem = useMemo(() => [
@@ -1152,7 +1175,10 @@ export function FloatingToolbar({ studio = false } = {}) {
     return (
       <>
         <StudioRail sections={SECTIONS} open={flyout} onOpen={setFlyout} onSettings={() => openSetup('settings')} />
-        {sec && <StudioFlyout section={sec} items={secItems(sec)} onPick={pickItem} onClose={() => setFlyout(null)}
+        {/* (rack-design) Racking: its own compact library (studio/RackLibrary.jsx — design/rack-library.png) */}
+        {sec && sec.id === 'racking' && <RackLibrary items={secItems(sec).filter(it => !RACK_LIBRARY_HIDDEN.has(it.id))} onPick={pickItem}
+          onKeep={keepItem} onClose={() => setFlyout(null)} />}
+        {sec && sec.id !== 'racking' && <StudioFlyout section={sec} items={secItems(sec)} onPick={pickItem} onClose={() => setFlyout(null)}
           onKeep={sec.id === 'draw' ? (it => selectShape(it, true)) : null} />}
         <StudioToolPill groups={groups} lineTools={lineTools} zones={zones} sections={sectionTools}
           penOptions={activeTool === TOOLS.FREEHAND && !measuring && (

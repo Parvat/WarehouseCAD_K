@@ -3,52 +3,65 @@
 // Rack drawing as DATA, not as markup.
 //
 // A rack's geometry is derived once, here, into a flat list of draw-ops in
-// WORLD pixels. Konva paints that list; the PDF export will read the same list
-// and emit SVG from it. One description, two renderers — so a rack can never
-// look like one thing on screen and another on paper, which is exactly what
-// happens when each renderer re-derives the geometry itself.
+// WORLD pixels. Konva paints that list (canvas2/shapes.jsx Ops); the PDF export
+// reads the same list and emits SVG from it. One description, two renderers —
+// so a rack can never look like one thing on screen and another on paper.
 //
 // Pure: no React, no store, no DOM. Given the same object it returns the same
 // ops, which also makes the geometry testable without a canvas.
 //
-// ── Op shapes ────────────────────────────────────────────────────────────────
-//   { op:'rect', x, y, w, h, fill?, stroke?, strokeWidth? }
-//   { op:'path', d, stroke?, strokeWidth?, fill? }        d = SVG path data
+// (rack-design — design/rack-plan-colour.png) A rack has NO fill. It is drawn in
+// its family's line colour (render/rackFamily.js): the outline, the frames, the
+// lane posts, the face bars, the arrows and the face words; its pallet slots are
+// dashed in the family's tint. Structure (frames, posts, face bars, a cantilever's
+// spine and arms) is drawn at its REAL size with a 1-screen-px floor; hairlines
+// (the outline, lane lines, slots) are a fixed SCREEN width, snapped to device
+// pixels so they stay sharp at every zoom (shapes.jsx).
 //
-// `strokeWidth` is in SCREEN pixels and does not scale with zoom — Konva gets
-// strokeScaleEnabled={false}. A hairline divider has to stay a hairline at
-// 400% or it becomes a slab. EXCEPT a rack's body outline (`border: true`):
-// that is a real line of RACK_BORDER_IN, in WORLD units like the upright
-// frames, and the canvas draws both at their actual size with a 1-screen-px
-// floor, snapped to whole pixels (render/pixelSnap.js). The PDF prints the
-// same world width.
+// ── Op shapes ────────────────────────────────────────────────────────────────
+//   { op:'rect', x, y, w, h, border:true, stroke, strokeWidth }   the body: its outline (screen px), its hit area
+//   { op:'rect', x, y, w, h, fill }                               a plain rect (a cantilever's clear hit body)
+//   { op:'uprights', rects:[{x,y,w,h}], fill }                    filled structure at real size (frames, posts, bars)
+//   { op:'lines', segs:[x1,y1,x2,y2,…], d, stroke, strokeWidth, dash? }   hairlines, screen px (d: the same as SVG)
+//   { op:'slots', rects:[{x,y,w,h}], stroke, strokeWidth, dash }  pallet slots, dashed outlines, screen px
+//   { op:'arrows', items:[{x, y0, y1}], head, color, strokeWidth } travel arrows in WORLD size, tail y0 → tip y1
+//   { op:'dots', pts:[x,y,…], r, fill }                           posts (a mezzanine's), radius in world px
+//   { op:'text', x, y, size, text, color, bold? }                 words at a real height (x the centre, y the top)
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { BEAM_TYPES } from '../utils/rackTypes'
 import { hasEmpty, isEmptySide } from '../utils/bayEmpty'
 import { deepOf, deepGapOf } from '../utils/deep'   // (r2-double-deep)
+import { positionsPerBeam } from '../utils/palletFit'
+import { rackColors, RACK_FAMILIES } from './rackFamily'
 
-/* The locked rack symbology. Literal by design: CLAUDE.md keeps canvas object
-   colours out of the theme system, since a token here would repaint the
-   drawing when the UI theme changes. */
+/* The older names, kept for the code and tests that read them: the pallet family now (rack-design). */
 export const RACK_PALETTE = {
-  fill:      '#DCE8DC',
-  border:    '#3E6B54',   // rack body outline — pine is reserved for the building wall
-  divider:   '#9CBBAA',   // bay / lane boundaries
-  upright:   '#8FAE9C',   // upright frames, filled at real width — a shade under the divider so a 3" frame reads as steel, not a gap
-  flue:      '#E0A63C',   // double row only
-  roller:    '#C7A15A',   // pallet-flow roller track
-  structure: '#2E4A3A',   // arrows, drive-in back wall
+  fill:      null,                          // no fill on any rack (rack-design)
+  border:    RACK_FAMILIES.pallet.line,
+  divider:   RACK_FAMILIES.pallet.tint,
+  upright:   RACK_FAMILIES.pallet.line,
+  structure: RACK_FAMILIES.pallet.line,
   conflict:  '#C0392B',
 }
 
-export const RACK_LINE = { edge: 1.5, hair: 1.2, rail: 1 }   // screen px
+/** Screen widths (px): the outline, a hairline (lane lines, deep lines), a slot's dash line, the travel arrow. */
+export const RACK_LINE = { edge: 1.25, hair: 1, slot: 1, arrow: 1.5, mezz: 2.5 }
+/** The pallet slots' dash, screen px. */
+export const SLOT_DASH = [4, 3]
+/** A face bar's real depth, inches (ENTRY / LOAD / PICK). */
+export const FACE_BAR_IN = 4
+/** The face words' real height, inches. */
+export const FACE_TEXT_IN = 12
+/** How far a slot sits in from its bay or lane on each side, inches. */
+export const SLOT_INSET_IN = 3
 
-/** A rack body outline's actual width, inches: 0.45" = 1.5 world px at
- *  40 px/ft, the width the PDF has always printed it at. */
+/** The outline's width — kept for callers that ask for it (it is a screen width now, RACK_LINE.edge). */
 export const RACK_BORDER_IN = 0.45
-/** The outline's width in world px. */
-export const rackBorderWidth = (gridSize = 40) => (RACK_BORDER_IN / 12) * gridSize
+export const rackBorderWidth = () => RACK_LINE.edge
+
+const inch = (v, gs) => (v / 12) * gs
+const colorsOf = (obj) => rackColors(obj.type) || RACK_FAMILIES.pallet
 
 /** Upright boundary positions across a beam rack.
  *  Layout is `upright | beam | upright | beam | upright`, so there are
@@ -66,90 +79,120 @@ export function uprightXs(obj, gridSize) {
   return { xs, upW, beams }
 }
 
-/** SELECTIVE (`rack_row`) — bay cells and nothing else.
- *
- *  Every bay divider is ONE path with a move/line pair per boundary, not a rect
- *  per bay: a 125-bay rack is then 2 nodes instead of ~250, which is the
- *  difference that makes a full layout draw at frame rate. */
-export function rackRowOps(obj, gridSize) {
-  const { xs, upW } = uprightXs(obj, gridSize)
-  const { x, y, width: w, height: h } = obj
+/* ── shared op makers ─────────────────────────────────────────────────────── */
 
-  const ops = [{
-    op: 'rect', x, y, w, h,
-    fill: RACK_PALETTE.fill,
-    stroke: RACK_PALETTE.border,
-    strokeWidth: rackBorderWidth(gridSize), border: true,
-  }]
+/** The body: its outline in the family colour (no fill) — and the rect a press inside it hits. */
+const body = (x, y, w, h, stroke) => ({ op: 'rect', x, y, w, h, fill: null, stroke, strokeWidth: RACK_LINE.edge, border: true })
 
-  const uprights = uprightsOp(xs, upW, [{ y, h }])
-  if (uprights) ops.push(uprights)
-  const dd = deepLinesOp(obj, xs, upW, [{ y, h, dir: 1 }], gridSize)
-  if (dd) ops.push(dd)
-  return ops
+/** Hairline segments as one op (`d`: the same segments as SVG path data). */
+function linesOp(segs, stroke, strokeWidth = RACK_LINE.hair, extra = {}) {
+  if (!segs.length) return null
+  let d = ''
+  for (let i = 0; i < segs.length; i += 4) d += `M${segs[i]} ${segs[i + 1]}L${segs[i + 2]} ${segs[i + 3]}`
+  return { op: 'lines', segs, d, stroke, strokeWidth, ...extra }
 }
 
-/** (r2-double-deep) A double-deep rack's frame lines: in each bay, a dashed line between the front and the rear pallet
- *  positions — across the middle of each deep spacing — on each face (`bands`: { y, h } of each face). One op. */
-function deepLinesOp(obj, xs, upW, bands, gridSize) {
-  const n = deepOf(obj)
-  if (n < 2) return null
-  const d = ((obj.depthIn ?? 42) / 12) * gridSize, g = (deepGapOf(obj) / 12) * gridSize
-  let p = ''
-  for (const b of bands) for (let k = 1; k < n; k++) {
-    const yy = b.y + k * d + (k - 0.5) * g
-    if (!(yy > b.y && yy < b.y + b.h)) continue
-    for (let i = 0; i + 1 < xs.length; i++) p += `M${xs[i] + upW} ${yy}L${xs[i + 1]} ${yy}`
-  }
-  return p ? { op: 'path', d: p, name: 'deep-line', stroke: RACK_PALETTE.divider, strokeWidth: RACK_LINE.hair, dash: [4, 3], opacity: 0.95 } : null
-}
+/** Dashed pallet slots, one op. */
+const slotsOp = (rects, stroke) => (rects.length ? { op: 'slots', rects, stroke, strokeWidth: RACK_LINE.slot, dash: SLOT_DASH } : null)
 
 /** Every upright frame of a beam rack, drawn to scale: a filled rect at the
  *  frame's real width (`uprightWidth`, 3" default) across each band — one
- *  op, one node, however many bays. `lefts` are the uprights' left edges
- *  (uprightXs' `xs`: both end frames and every interior one). Never drawn
- *  across a double row's flue: the two bands are separate frames.
- *
- *  Always the REAL width, at every zoom — no minimum on-screen width: a 3"
- *  frame is 3" whether the view shows one bay or the whole building. */
-function uprightsOp(lefts, upW, bands) {
+ *  op, one node, however many bays. Never drawn across a double row's flue. */
+function uprightsOp(lefts, upW, bands, fill) {
   if (!lefts.length || !bands.length) return null
   const rects = []
   for (const x of lefts) for (const b of bands) rects.push({ x, y: b.y, w: upW, h: b.h })
-  return { op: 'uprights', rects, fill: RACK_PALETTE.upright }
+  return { op: 'uprights', rects, fill }
 }
 
-/** The rects an `uprights` op paints, in world px: each frame at its real
- *  width. (The canvas then gives each a 1-screen-px floor and snaps it to
- *  whole pixels — render/pixelSnap.js — which is a screen matter, not data.) */
+/** The rects an `uprights` op paints, in world px: each at its real size. (The canvas then gives each a 1-screen-px
+ *  floor and snaps it to whole pixels — render/pixelSnap.js — which is a screen matter, not data.) */
 export function uprightDrawRects(op) {
   return op.rects.map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }))
 }
 
-/** Bay dividers for one or more horizontal bands, as a SINGLE path.
- *  `bands` is a list of { y, h } — a double row passes two, so a 125-bay rack
- *  is still one node instead of 250. */
-function dividerPath(interior, upW, bands) {
-  if (!interior.length || !bands.length) return null
-  let d = ''
-  for (const ux of interior) {
-    const dx = ux + upW / 2
-    for (const b of bands) d += `M${dx} ${b.y}L${dx} ${b.y + b.h}`
-  }
-  return { op: 'path', d, stroke: RACK_PALETTE.divider, strokeWidth: RACK_LINE.hair }
+/** A face bar along the top (`side` 'top') or bottom face, FACE_BAR_IN deep, centred on the face line. */
+const faceBar = (obj, side, gs) => {
+  const t = inch(FACE_BAR_IN, gs), y = side === 'top' ? obj.y : obj.y + obj.height
+  return { x: obj.x, y: y - t / 2, w: obj.width, h: t }
+}
+/** The face's words, outside the face: centred, FACE_TEXT_IN high. */
+const faceText = (obj, side, text, color, gs) => {
+  const s = inch(FACE_TEXT_IN, gs), gap = inch(FACE_BAR_IN, gs) / 2 + s * 0.35
+  return { op: 'text', x: obj.x + obj.width / 2, y: side === 'top' ? obj.y - gap - s : obj.y + obj.height + gap, size: s, text, color, bold: true }
 }
 
-/** DOUBLE ROW (`rack_double_row`) — two bands back to back with the flue
- *  gap between them.
- *
- *  BUG 59 — no marker in the flue gap at all: the two row rects are drawn
- *  with the real `flueH` gap left empty (background shows through) and
- *  nothing is drawn on top of it — no line, no fill. This deliberately
- *  diverges from the SVG reference (which draws a thin centred hairline);
- *  the gap itself, at its own real width, is what reads as a flue now. */
+/* ── Beam racks ───────────────────────────────────────────────────────────── */
+
+/** The pallet slots of a beam rack's bays: in each bay (between its two frames) as many pallets as its beam carries
+ *  (utils/palletFit.js — the same count the positions use), across each band; a double-deep band is split into its
+ *  deep positions. `skip(i, s)`: a bay side drawn empty. */
+function beamSlotRects(obj, xs, upW, bands, gs, skip = null) {
+  const pw = inch(obj.palletWIn || 40, gs), inset = inch(SLOT_INSET_IN, gs)
+  const n = deepOf(obj), d = inch(obj.depthIn ?? 42, gs), g = inch(deepGapOf(obj), gs)
+  const out = []
+  bands.forEach((b, s) => {
+    // the depth bands a pallet stands in: the face's whole depth, or each deep position (from the face inward)
+    const rows = []
+    if (n < 2) rows.push([b.y, b.h])
+    else for (let k = 0; k < n; k++) {
+      const y0 = b.dir === -1 ? b.y + b.h - (k + 1) * d - k * g : b.y + k * (d + g)
+      if (y0 >= b.y - 1e-6 && y0 + d <= b.y + b.h + 1e-6) rows.push([y0, d])
+    }
+    for (let i = 0; i + 1 < xs.length; i++) {
+      if (skip && skip(i, s)) continue
+      const beamIn = ((xs[i + 1] - xs[i] - upW) / gs) * 12
+      const per = positionsPerBeam(beamIn, obj.palletWIn || 40)
+      if (!per) continue
+      const bx = xs[i] + upW, bw = xs[i + 1] - bx, gap = (bw - per * pw) / (per + 1)
+      for (const [ry, rh] of rows) {
+        if (rh <= inset * 2) continue
+        for (let j = 0; j < per; j++) out.push({ x: bx + gap + j * (pw + gap), y: ry + inset, w: pw, h: rh - inset * 2 })
+      }
+    }
+  })
+  return out
+}
+
+/** (r2-double-deep) A double-deep rack's frame lines: in each bay, a dashed line between the front and the rear pallet
+ *  positions — across the middle of each deep spacing — on each face (`bands`: { y, h } of each face). One op. */
+function deepLinesOp(obj, xs, upW, bands, gridSize, color) {
+  const n = deepOf(obj)
+  if (n < 2) return null
+  const d = ((obj.depthIn ?? 42) / 12) * gridSize, g = (deepGapOf(obj) / 12) * gridSize
+  const segs = []
+  for (const b of bands) for (let k = 1; k < n; k++) {
+    const yy = b.y + k * d + (k - 0.5) * g
+    if (!(yy > b.y && yy < b.y + b.h)) continue
+    for (let i = 0; i + 1 < xs.length; i++) segs.push(xs[i] + upW, yy, xs[i + 1], yy)
+  }
+  return linesOp(segs, color, RACK_LINE.hair, { name: 'deep-line', dash: SLOT_DASH })
+}
+
+/** SELECTIVE (`rack_row`, a double-deep one too) — the outline, its frames, and its pallet slots. */
+export function rackRowOps(obj, gridSize) {
+  const { xs, upW } = uprightXs(obj, gridSize)
+  const { x, y, width: w, height: h } = obj
+  const c = colorsOf(obj)
+  const ops = [body(x, y, w, h, c.line)]
+  const band = [{ y, h, dir: 1 }]
+  const slots = slotsOp(beamSlotRects(obj, xs, upW, band, gridSize), c.tint)
+  if (slots) ops.push(slots)
+  const uprights = uprightsOp(xs, upW, band, c.line)
+  if (uprights) ops.push(uprights)
+  const dd = deepLinesOp(obj, xs, upW, band, gridSize, c.line)
+  if (dd) ops.push(dd)
+  return ops
+}
+
+/** DOUBLE ROW (`rack_double_row`) — two bands back to back with the flue gap
+ *  between them, left empty: the gap itself, at its own real width, reads as the
+ *  flue. A pair's empty bay sides (utils/bayEmpty.js) have no slots, and no
+ *  upright between two empty bays (an upright beside a full bay is its frame). */
 export function rackDoubleRowOps(obj, gridSize) {
   const { xs, upW } = uprightXs(obj, gridSize)
   const { x, y, width: w, height: h } = obj
+  const c = colorsOf(obj)
 
   const flueH = ((obj.flueSpaceIn || 9) / 12) * gridSize
   /* Guard a flue taller than the object itself — a malformed rack should draw
@@ -157,68 +200,40 @@ export function rackDoubleRowOps(obj, gridSize) {
   const rowH = Math.max(0, (h - flueH) / 2)
   if (rowH <= 0) return rackBoxOps(obj, gridSize)
 
-  const band = (by) => ({
-    op: 'rect', x, y: by, w, h: rowH,
-    fill: RACK_PALETTE.fill,
-    stroke: RACK_PALETTE.border,
-    strokeWidth: rackBorderWidth(gridSize), border: true,
-  })
-
   const topY = y
   const botY = y + rowH + flueH
-  /* A pair's empty bay sides (utils/bayEmpty.js): that band keeps its outline, but an empty bay is drawn empty — no
-     fill, and no upright between two empty bays (an upright beside a full bay is that bay's frame and stays). */
-  if (hasEmpty(obj)) {
-    const ops = []
-    const n = xs.length - 1
-    const rects = []
+  // each face deep from its aisle face inward: the top face from its top, the bottom from its bottom
+  const bands = [{ y: topY, h: rowH, dir: 1 }, { y: botY, h: rowH, dir: -1 }]
+  const ops = [body(x, topY, w, rowH, c.line), body(x, botY, w, rowH, c.line)]
+  const empty = hasEmpty(obj)
+  const slots = slotsOp(beamSlotRects(obj, xs, upW, bands, gridSize, empty ? (i, s) => isEmptySide(obj, i, s) : null), c.tint)
+  if (slots) ops.push(slots)
+  if (empty) {
+    const n = xs.length - 1, rects = []
     for (const [s, by] of [[0, topY], [1, botY]]) {
-      for (let i = 0; i < n;) {
-        if (isEmptySide(obj, i, s)) { i++; continue }
-        let j = i
-        while (j + 1 < n && !isEmptySide(obj, j + 1, s)) j++
-        ops.push({ op: 'rect', x: xs[i], y: by, w: xs[j + 1] + upW - xs[i], h: rowH, fill: RACK_PALETTE.fill })
-        i = j + 1
-      }
-      ops.push({ ...band(by), fill: null })
       for (let k = 0; k <= n; k++) if (!(isEmptySide(obj, k - 1, s) || k === 0) || !(isEmptySide(obj, k, s) || k === n)) rects.push({ x: xs[k], y: by, w: upW, h: rowH })
     }
-    if (rects.length) ops.push({ op: 'uprights', rects, fill: RACK_PALETTE.upright })
-    return ops
+    if (rects.length) ops.push({ op: 'uprights', rects, fill: c.line })
+  } else {
+    const uprights = uprightsOp(xs, upW, bands, c.line)
+    if (uprights) ops.push(uprights)
   }
-  const ops = [
-    band(topY),
-    band(botY),
-  ]
-
-  const uprights = uprightsOp(xs, upW, [{ y: topY, h: rowH }, { y: botY, h: rowH }])
-  if (uprights) ops.push(uprights)
-  // (r2-double-deep) each face deep: counted from its aisle face inward (the top face from its top, the bottom from its bottom)
-  const dd = deepLinesOp(obj, xs, upW, [{ y: topY, h: rowH }, { y: botY, h: rowH }], gridSize)
+  const dd = deepLinesOp(obj, xs, upW, bands, gridSize, c.line)
   if (dd) ops.push(dd)
   return ops
 }
 
-/** A rack's bare box, with no internal structure.
- *
- *  This is a fallback for geometry that cannot be subdivided sensibly — a flue
- *  taller than the rack, say — NOT a zoom behaviour. There is deliberately no
- *  level-of-detail collapse here: consolidating each rack to two nodes made
- *  full detail cheap enough to draw at every zoom, and dropping the threshold
- *  means these ops no longer depend on zoom at all. */
+/** A rack's bare box, with no internal structure: a fallback for geometry that cannot be subdivided sensibly — a flue
+ *  taller than the rack, say — NOT a zoom behaviour (the ops never depend on zoom). */
 export function rackBoxOps(obj, gridSize = 40) {
-  return [{
-    op: 'rect', x: obj.x, y: obj.y, w: obj.width, h: obj.height,
-    fill: RACK_PALETTE.fill,
-    stroke: RACK_PALETTE.border,
-    strokeWidth: rackBorderWidth(gridSize), border: true,
-  }]
+  void gridSize
+  return [body(obj.x, obj.y, obj.width, obj.height, colorsOf(obj).line)]
 }
 
 /* ── Lane racks ──────────────────────────────────────────────────────────────
-   Drive-in, drive-through, push-back and pallet-flow are the same box with the
-   same lane dividers and differ only in their cues. Sharing the chassis is what
-   makes the cue the tell-apart rather than four subtly different boxes.
+   Drive-in, drive-through, push-back and pallet-flow share the chassis — lanes,
+   each `palletDeep` slots deep — and differ in their cues: which faces carry a
+   face bar and its words, and which way the arrows run.
 
    Lane width is DERIVED from the object's own width, never rebuilt from pallet
    dimensions: the object was dimensioned at creation and its width is what
@@ -233,155 +248,87 @@ export function laneGeom(obj, gridSize) {
   return { lanes, upW, laneW, postXs, laneCx }
 }
 
-/** Box + lane dividers, and optionally the closed back.
- *  Two ops for any lane count, same consolidation rule as rack_row. */
-function laneChassisOps(obj, gridSize, { backWall = false } = {}) {
-  const { upW, postXs } = laneGeom(obj, gridSize)
+/** How deep a lane is drawn, in pallets: its own, kept to something drawable. */
+const laneDeep = (obj) => Math.max(1, Math.min(Math.round(obj.palletDeep || 4), 20))
+
+/** One rack of the lane family: `faces` { top, bottom } (each a word, or null for no face bar), `arrows` 'up' (into the
+ *  lane from the bottom face) or 'down' (toward the bottom face), `posts` 'bars' (a frame the full depth — the flow
+ *  racks) or 'squares' (a post at each pallet — the drive-ins). */
+function laneOps(obj, gridSize, { faces, arrows, posts }) {
+  const { upW, laneW, postXs, laneCx } = laneGeom(obj, gridSize)
   const { x, y, width: w, height: h } = obj
+  const c = colorsOf(obj), deep = laneDeep(obj), sd = h / deep, inset = inch(SLOT_INSET_IN, gridSize)
+  const ops = [body(x, y, w, h, c.line)]
 
-  const ops = [{
-    op: 'rect', x, y, w, h,
-    fill: RACK_PALETTE.fill,
-    stroke: RACK_PALETTE.border,
-    strokeWidth: rackBorderWidth(gridSize), border: true,
-  }]
+  // the pallet slots: each lane, each pallet deep
+  const slots = []
+  if (laneW > inset * 2 && sd > inset * 2) for (const px of postXs.slice(0, -1)) for (let k = 0; k < deep; k++) slots.push({ x: px + upW + inset, y: y + k * sd + inset, w: laneW - inset * 2, h: sd - inset * 2 })
+  const so = slotsOp(slots, c.tint)
+  if (so) ops.push(so)
 
-  const dividers = dividerPath(postXs.slice(1, -1), upW, [{ y, h }])
-  if (dividers) ops.push(dividers)
-
-  /* The closed back — one heavier rule across the FAR end, the single cue
-     separating drive-in from drive-through. A line, not a filled bar: the bar
-     read as a wall of the building itself. */
-  if (backWall) {
-    ops.push({
-      op: 'path', d: `M${x} ${y}L${x + w} ${y}`,
-      stroke: RACK_PALETTE.structure, strokeWidth: RACK_LINE.edge * 2.2,
-    })
+  if (posts === 'bars') {
+    ops.push({ op: 'uprights', name: 'lane-posts', rects: postXs.map(px => ({ x: px, y, w: upW, h })), fill: c.line })
+  } else {
+    // a thin lane line at each post's centre, and a square post at each pallet along it
+    const segs = []
+    for (const px of postXs.slice(1, -1)) segs.push(px + upW / 2, y, px + upW / 2, y + h)
+    const lo = linesOp(segs, c.line)
+    if (lo) ops.push(lo)
+    const rects = []
+    for (const px of postXs) for (let k = 0; k <= deep; k++) rects.push({ x: px, y: y + k * sd - upW / 2, w: upW, h: upW })
+    ops.push({ op: 'uprights', name: 'lane-posts', rects, fill: c.line })
   }
-  return ops
-}
 
-/* Travel arrows are a LEGEND mark, not a dimension: one size everywhere on the
-   sheet regardless of how deep the rack is. They are DRAWING size, like the
-   labels (render/labelSize.js): the op carries the design measurements and
-   the painter sizes them by the Label size scale `lz` (travelArrowGeom), so
-   they scale with the racks when you zoom and with the Label size setting.
-   All of a rack's arrows ride in ONE op, so a twelve-lane rack is one node. */
-export const RACK_ARROW = { len: 13, head: 7, gap: 3, strokeWidth: 1.2 }
+  // the face bars and their words
+  const bars = []
+  for (const side of ['top', 'bottom']) if (faces[side]) bars.push(faceBar(obj, side, gridSize))
+  if (bars.length) ops.push({ op: 'uprights', name: 'face-bar', rects: bars, fill: c.line })
 
-/** An `arrows` op's geometry in world units for label scale `lz`: each
- *  arrow's shaft (x1, y1, x2, y2) and head triangle, and the stroke width.
- *  The canvas painter and the PDF export both draw from this. */
-export function travelArrowGeom(o, lz) {
-  const len = o.len / lz, head = o.head / lz, gap = o.gap / lz
-  return {
-    strokeWidth: o.strokeWidth / lz,
-    arrows: o.items.map(it => {
-      const tipY = it.side === 'below' ? it.edgeY + gap : it.edgeY - gap - len
-      const baseY = tipY + head
-      return { shaft: [it.cx, tipY + len, it.cx, baseY], head: [it.cx - head * 0.48, baseY, it.cx, tipY, it.cx + head * 0.48, baseY] }
-    }),
-  }
-}
-
-function arrowsOp(items) {
-  if (!items.length) return null
-  return { op: 'arrows', items, color: RACK_PALETTE.structure, ...RACK_ARROW }
-}
-
-/** DRIVE-IN · LIFO — lanes, a CLOSED back wall, and entry arrows at the one
- *  open end. Trucks drive in and reverse out of the same face, which is exactly
- *  what the single row of arrows says. */
-export function rackDriveInOps(obj, gridSize) {
-  const { laneCx } = laneGeom(obj, gridSize)
-  const ops = laneChassisOps(obj, gridSize, { backWall: true })
-  const a = arrowsOp(laneCx.map(cx => ({ cx, edgeY: obj.y + obj.height, side: 'below' })))
-  if (a) ops.push(a)
-  return ops
-}
-
-/** DRIVE-THROUGH · FIFO — the same lanes as drive-in with NO back wall, and
- *  arrows at both ends running the same way. Load one face, pick the other; the
- *  open far end is the whole difference. */
-export function rackDriveThroughOps(obj, gridSize) {
-  const { laneCx } = laneGeom(obj, gridSize)
-  const ops = laneChassisOps(obj, gridSize)
-  const a = arrowsOp([
-    ...laneCx.map(cx => ({ cx, edgeY: obj.y + obj.height, side: 'below' })),
-    ...laneCx.map(cx => ({ cx, edgeY: obj.y, side: 'above' })),
-  ])
-  if (a) ops.push(a)
-  return ops
-}
-
-/** PUSH-BACK · LIFO — lanes carrying a stack of nested carts. Each cart sits
- *  slightly narrower than the one in front of it, which is what a nested cart
- *  set actually looks like from above and reads as the incline running back
- *  into the lane. Arrows at the single open face.
- *
- *  Every cart in every lane is ONE path: a six-lane rack four deep is 24 carts,
- *  which as separate rects would undo the consolidation that makes a full sheet
- *  draw at frame rate. */
-export function rackPushbackOps(obj, gridSize) {
-  const { laneW, laneCx } = laneGeom(obj, gridSize)
-  const ops = laneChassisOps(obj, gridSize)
-
-  const deep  = Math.max(1, Math.min(obj.palletDeep || 4, 8))
-  const pad   = laneW * 0.12
-  const slot  = (obj.height - pad * 2) / deep
-  const cartH = slot * 0.68
-
-  let d = ''
-  for (const cx of laneCx) {
-    for (let i = 0; i < deep; i++) {
-      /* i = 0 is the BACK of the lane, so the deepest cart is the narrowest —
-         the nest tapers away from the open face. */
-      const inset = pad + (deep - 1 - i) * (laneW * 0.05)
-      const w = Math.max(laneW * 0.25, laneW - inset * 2)
-      const y = obj.y + pad + i * slot + (slot - cartH) / 2
-      d += `M${cx - w / 2} ${y}h${w}v${cartH}h${-w}Z`
+  // the arrows, in the front (bottom) pallet of each lane
+  if (arrows) {
+    const s0 = y + h - sd + inset, s1 = y + h - inset, len = Math.max(0, (s1 - s0) * 0.62), mid = (s0 + s1) / 2
+    if (len > 0) {
+      const head = Math.min(len * 0.32, laneW * 0.25)
+      const items = laneCx.map(cx => (arrows === 'up' ? { x: cx, y0: mid + len / 2, y1: mid - len / 2 } : { x: cx, y0: mid - len / 2, y1: mid + len / 2 }))
+      ops.push({ op: 'arrows', items, head, color: c.line, strokeWidth: RACK_LINE.arrow })
     }
   }
-  if (d) {
-    ops.push({ op: 'path', d, fill: undefined,
-      stroke: RACK_PALETTE.border, strokeWidth: RACK_LINE.hair })
-  }
-
-  const a = arrowsOp(laneCx.map(cx => ({ cx, edgeY: obj.y + obj.height, side: 'below' })))
-  if (a) ops.push(a)
+  for (const side of ['top', 'bottom']) if (faces[side]) ops.push(faceText(obj, side, faces[side], c.line, gridSize))
   return ops
 }
 
-/** PALLET FLOW · FIFO — lanes with a roller hint: two dashed lines running the
- *  full depth of each lane, the track a pallet rolls along. Load high side,
- *  pick low side, so the arrows sit at one face only.
- *
- *  Both rails of every lane ride in ONE dashed path. The dash is a SCREEN
- *  measure like the stroke widths — strokeScaleEnabled is off, so the pattern
- *  keeps its pitch at any zoom instead of turning into a solid line. */
-export function rackPalletFlowOps(obj, gridSize) {
-  const { laneW, laneCx } = laneGeom(obj, gridSize)
-  const ops = laneChassisOps(obj, gridSize)
-
-  const inset = laneW * 0.22
-  const pad   = obj.height * 0.04
-  const y0 = obj.y + pad, y1 = obj.y + obj.height - pad
-
-  let d = ''
-  for (const cx of laneCx) {
-    d += `M${cx - inset} ${y0}L${cx - inset} ${y1}`
-    d += `M${cx + inset} ${y0}L${cx + inset} ${y1}`
-  }
-  if (d) {
-    ops.push({ op: 'path', d,
-      stroke: RACK_PALETTE.roller, strokeWidth: RACK_LINE.rail,
-      dash: [3.5, 3.5], opacity: 0.95 })
-  }
-
-  const a = arrowsOp(laneCx.map(cx => ({ cx, edgeY: obj.y + obj.height, side: 'below' })))
-  if (a) ops.push(a)
-  return ops
+/** An `arrows` op's geometry (world px): each arrow's shaft (x1, y1, x2, y2) and head triangle, the head's tip at y1.
+ *  The canvas painter and the PDF export both draw from this. */
+export function arrowGeom(o) {
+  return o.items.map(it => {
+    const dir = Math.sign(it.y1 - it.y0) || -1, hb = it.y1 - dir * o.head
+    return { shaft: [it.x, it.y0, it.x, hb], head: [it.x - o.head * 0.5, hb, it.x, it.y1, it.x + o.head * 0.5, hb] }
+  })
 }
+
+/** Each lane rack's faces: the word on its top and bottom face (a face bar with it), or none. */
+export const LANE_FACES = {
+  rack_drive_in:      { bottom: 'ENTRY' },
+  rack_drive_through: { top: 'ENTRY', bottom: 'ENTRY' },
+  rack_pushback:      { bottom: 'LOAD · PICK' },
+  rack_pallet_flow:   { top: 'LOAD', bottom: 'PICK' },
+}
+/** How far a rack's face words reach past its `side` face ('top' | 'bottom'), world px — 0 with none there. The
+ *  selected rack's dimension labels sit past them (canvas2/DimensionLabels.jsx), never over them. */
+export function faceWordsReach(obj, side, gridSize = 40) {
+  if (!LANE_FACES[obj?.type]?.[side]) return 0
+  const s = inch(FACE_TEXT_IN, gridSize)
+  return inch(FACE_BAR_IN, gridSize) / 2 + s * 0.35 + s
+}
+
+/** DRIVE-IN · LIFO — one entry: a face bar and ENTRY on the front, arrows into each lane. */
+export const rackDriveInOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_drive_in, arrows: 'up', posts: 'squares' })
+/** DRIVE-THROUGH · FIFO — an entry at both ends. */
+export const rackDriveThroughOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_drive_through, arrows: 'up', posts: 'squares' })
+/** PUSH-BACK · LIFO — one face loads and picks; the carts push back into the lane. */
+export const rackPushbackOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_pushback, arrows: 'up', posts: 'bars' })
+/** PALLET FLOW · FIFO — loaded at the back, picked at the front, the pallets rolling toward the pick face. */
+export const rackPalletFlowOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_pallet_flow, arrows: 'down', posts: 'bars' })
 
 /** Tower centres and the spine band for a cantilever.
  *  Towers are spread evenly across the object's own width rather than at a
@@ -403,114 +350,74 @@ export function cantileverGeom(obj, gridSize) {
   return { doubleSided, towers, towerW, spineH, armT, spineY, cxs }
 }
 
-/** CANTILEVER — a spine carrying towers, with arms reaching off one or both
- *  faces and an X-brace across the spine.
- *
- *  Four ops however many towers there are: the spine band, the brace, one path
- *  for every arm and one for every tower post. */
+/** CANTILEVER, from above — the column line (the spine, a square at each column), each column's arm, and the arms'
+ *  reach as a dashed tint zone on each loaded side. */
 export function rackCantileverOps(obj, gridSize) {
-  const { doubleSided, towers, towerW, spineH, armT, spineY, cxs } =
-    cantileverGeom(obj, gridSize)
+  const { doubleSided, towers, towerW, spineH, armT, spineY, cxs } = cantileverGeom(obj, gridSize)
+  const c = colorsOf(obj)
   if (!cxs.length) return rackBoxOps(obj)
+  const reach = Math.max(...cxs.map((_, i) => ((towers[i] || 36) / 12) * gridSize))
+  const x0 = cxs[0], x1 = cxs[cxs.length - 1]
+  const zones = [{ x: x0, y: doubleSided ? spineY - reach : spineY + spineH, w: x1 - x0, h: reach }]
+  if (doubleSided) zones.push({ x: x0, y: spineY + spineH, w: x1 - x0, h: reach })
 
   const ops = [
-    /* A transparent body, matching the SVG: the arms and spine are slender, and
-       without it a press inside the rack's own outline would fall straight
-       through to the canvas instead of selecting it. */
+    /* A clear body: the column line and arms are slender, and without it a press inside the rack's own outline would
+       fall straight through to the canvas instead of selecting it. */
     { op: 'rect', x: obj.x, y: obj.y, w: obj.width, h: obj.height, fill: 'transparent' },
-    /* The spine is the darkest ink a rack may use — still lighter than the
-       building wall, which owns pine. */
-    { op: 'rect', x: obj.x, y: spineY, w: obj.width, h: spineH,
-      fill: RACK_PALETTE.structure, opacity: 0.55 },
-    { op: 'path',
-      d: `M${cxs[0]} ${spineY}L${cxs[cxs.length - 1]} ${spineY + spineH}`
-       + `M${cxs[0]} ${spineY + spineH}L${cxs[cxs.length - 1]} ${spineY}`,
-      stroke: RACK_PALETTE.structure, strokeWidth: RACK_LINE.rail, opacity: 0.5 },
   ]
-
-  let armsD = '', postsD = ''
+  const zo = slotsOp(zones.filter(z => z.w > 0 && z.h > 0), c.tint)
+  if (zo) ops.push({ ...zo, name: 'arm-reach' })
+  const arms = []
   cxs.forEach((cx, i) => {
     const armPx = ((towers[i] || 36) / 12) * gridSize
-    const ax = cx - armT / 2
-    // front arm — above the spine when double-sided, below it when single
-    const frontY = doubleSided ? spineY - armPx : spineY + spineH
-    armsD += `M${ax} ${frontY}h${armT}v${armPx}h${-armT}Z`
-    if (doubleSided) {
-      armsD += `M${ax} ${spineY + spineH}h${armT}v${armPx}h${-armT}Z`
-    }
-    postsD += `M${cx - towerW / 2} ${spineY}h${towerW}v${spineH}h${-towerW}Z`
+    arms.push({ x: cx - armT / 2, y: doubleSided ? spineY - armPx : spineY + spineH, w: armT, h: armPx })
+    if (doubleSided) arms.push({ x: cx - armT / 2, y: spineY + spineH, w: armT, h: armPx })
   })
-
-  if (armsD) {
-    ops.push({ op: 'path', d: armsD, fill: RACK_PALETTE.fill,
-      stroke: RACK_PALETTE.structure, strokeWidth: RACK_LINE.hair })
-  }
-  if (postsD) {
-    ops.push({ op: 'path', d: postsD, fill: RACK_PALETTE.structure, opacity: 0.9 })
-  }
+  ops.push({ op: 'uprights', name: 'arms', rects: arms, fill: c.line })
+  ops.push({ op: 'uprights', name: 'spine', rects: [{ x: x0, y: spineY, w: x1 - x0, h: spineH }], fill: c.line })
+  ops.push({ op: 'uprights', name: 'columns', rects: cxs.map(cx => ({ x: cx - towerW / 2, y: spineY + spineH / 2 - towerW / 2, w: towerW, h: towerW })), fill: c.line })
   return ops
 }
 
-/** MEZZANINE — a deck, not a rack: a floor plate with a structural grid and a
- *  stair run at one corner.
- *
- *  The grid divisions are derived from the deck's own size at roughly one bay
- *  per 6ft, so a large mezzanine gains divisions instead of stretching four of
- *  them across the whole span. Faint by design — it is the surface underfoot,
- *  and it must not compete with the racks standing on it. */
+/** MEZZANINE — a raised floor, not a rack: a dashed outline with a thin cross, its posts along the edges, and its name
+ *  and size in the middle. */
 export function rackMezzanineOps(obj, gridSize) {
   const { x, y, width: w, height: h } = obj
-  const ops = [{
-    op: 'rect', x, y, w, h,
-    fill: RACK_PALETTE.fill,
-    stroke: RACK_PALETTE.border,
-    strokeWidth: rackBorderWidth(gridSize), border: true,
-  }]
-
-  const span = gridSize * 6
-  const gx = Math.max(3, Math.round(w / span))
-  const gy = Math.max(2, Math.round(h / span))
-
-  let grid = ''
-  for (let i = 1; i < gx; i++) { const gxp = x + (w * i) / gx; grid += `M${gxp} ${y}L${gxp} ${y + h}` }
-  for (let i = 1; i < gy; i++) { const gyp = y + (h * i) / gy; grid += `M${x} ${gyp}L${x + w} ${gyp}` }
-  if (grid) {
-    ops.push({ op: 'path', d: grid,
-      stroke: RACK_PALETTE.border, strokeWidth: RACK_LINE.rail, opacity: 0.3 })
+  const c = colorsOf(obj)
+  const ops = [{ ...body(x, y, w, h, null) }]   // the body: its hit area only — its edge is the dashed line below
+  ops.push(linesOp([x, y, x + w, y, x + w, y, x + w, y + h, x + w, y + h, x, y + h, x, y + h, x, y], c.line, RACK_LINE.mezz, { name: 'mezz-edge', dash: [7, 4] }))
+  ops.push(linesOp([x, y, x + w, y + h, x + w, y, x, y + h], c.line, RACK_LINE.hair, { name: 'mezz-cross', opacity: 0.6 }))
+  // the posts: the corners, and along each edge no more than 25 ft apart
+  const pts = [], step = 25 * gridSize
+  const nx = Math.max(1, Math.ceil(w / step)), ny = Math.max(1, Math.ceil(h / step))
+  for (let i = 0; i <= nx; i++) pts.push(x + (w * i) / nx, y, x + (w * i) / nx, y + h)
+  for (let j = 1; j < ny; j++) pts.push(x, y + (h * j) / ny, x + w, y + (h * j) / ny)
+  ops.push({ op: 'dots', pts, r: inch(3.5, gridSize), fill: c.line })
+  // its name and size, centred
+  const s1 = inch(16, gridSize), s2 = inch(12, gridSize)
+  if (w > s1 * 7 && h > (s1 + s2) * 1.6) {
+    const ft = (v) => `${Math.round((v / gridSize) * 10) / 10}′`
+    ops.push({ op: 'text', x: x + w / 2, y: y + h / 2 - (s1 + s2 * 1.2) / 2, size: s1, text: 'MEZZANINE', color: c.line, bold: true, halo: true })
+    ops.push({ op: 'text', x: x + w / 2, y: y + h / 2 - (s1 + s2 * 1.2) / 2 + s1 * 1.15, size: s2, text: `${ft(w)} × ${ft(h)}`, color: c.line, halo: true })
   }
-
-  /* Stair run — four treads stepping down and away from the deck corner. The
-     one cue that says "you can get up here", which is the whole difference
-     between a mezzanine and a plain platform. */
-  const treadW = w * 0.12
-  let stairs = ''
-  for (let i = 0; i < 4; i++) {
-    const sx = x + w * 0.82 - i * 6
-    const sy = y + h * 0.78 + i * 5
-    stairs += `M${sx} ${sy}h${treadW}v4h${-treadW}Z`
-  }
-  ops.push({ op: 'path', d: stairs, fill: RACK_PALETTE.border, opacity: 0.55 })
   return ops
 }
 
-/** SHELVING — hand-load racking: two heavy end frames with a shelf line
- *  between them. No bays and no travel, because nothing drives into it; the
- *  end frames carrying a single shelf are what separate it on sight from a
- *  selective rack of the same footprint. */
+/** SHELVING — hand-picked units: each unit's outline (about 4 ft wide, the run split evenly) with its shelf count
+ *  inside, in the family colour. */
 export function rackShelvingOps(obj, gridSize) {
   const { x, y, width: w, height: h } = obj
-  return [
-    { op: 'rect', x, y, w, h,
-      fill: RACK_PALETTE.fill,
-      stroke: RACK_PALETTE.border,
-      strokeWidth: rackBorderWidth(gridSize), border: true },
-    // end frames — both uprights in one path
-    { op: 'path', d: `M${x} ${y}L${x} ${y + h}M${x + w} ${y}L${x + w} ${y + h}`,
-      stroke: RACK_PALETTE.border, strokeWidth: RACK_LINE.edge * 1.5 },
-    // the shelf itself
-    { op: 'path', d: `M${x} ${y + h / 2}L${x + w} ${y + h / 2}`,
-      stroke: RACK_PALETTE.divider, strokeWidth: RACK_LINE.hair },
-  ]
+  const c = colorsOf(obj)
+  const n = Math.max(1, Math.round(w / (4 * gridSize))), uw = w / n
+  const ops = [body(x, y, w, h, c.line)]
+  const segs = []
+  for (let i = 1; i < n; i++) segs.push(x + i * uw, y, x + i * uw, y + h)
+  const lo = linesOp(segs, c.line, RACK_LINE.hair, { name: 'shelf-units' })
+  if (lo) ops.push(lo)
+  const s = Math.min(h * 0.55, inch(13, gridSize)), shelves = Math.max(1, Math.round(obj.shelves || 5))
+  if (s > 0) for (let i = 0; i < n; i++) ops.push({ op: 'text', x: x + (i + 0.5) * uw, y: y + (h - s) / 2, size: s, text: String(shelves), color: c.line })
+  return ops
 }
 
 const BUILDERS = {

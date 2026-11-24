@@ -70,7 +70,10 @@ describe('B — flue sizing', () => {
       } else if (op.op === 'uprights') {
         // every upright frame lies wholly outside the gap
         for (const r of op.rects) expect(r.y + r.h <= flueLo + EPS || r.y >= flueHi - EPS).toBe(true)
-      } else if (op.op === 'path') {
+      } else if (op.op === 'slots') {
+        // (rack-design) every pallet slot lies wholly outside the gap
+        for (const r of op.rects) expect(r.y + r.h <= flueLo + EPS || r.y >= flueHi - EPS).toBe(true)
+      } else if (op.op === 'path' || op.op === 'lines') {
         // every segment's y range lies wholly outside the gap
         const ys = [...op.d.matchAll(/[ML]\s*[-\d.]+\s+([-\d.]+)/g)].map(m => +m[1])
         for (let i = 0; i < ys.length; i += 2) {

@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   rackDrawOps, rackRowOps, rackDoubleRowOps, rackBoxOps, uprightXs, bayAtPoint,
-  RACK_PALETTE, RACK_LINE, PORTED_RACK_TYPES, uprightDrawRects,
+  RACK_LINE, PORTED_RACK_TYPES, uprightDrawRects,
 } from '../render/rackOps'
+import { RACK_FAMILIES } from '../render/rackFamily'
 
 const GS = 40
 
@@ -47,13 +48,15 @@ describe('rackOps — upright boundaries', () => {
   })
 })
 
+/* (rack-design — design/rack-plan-colour.png) a selective rack: its outline (no fill), its pallet slots dashed in the
+   pallet tint, and its frames in the pallet navy. */
 describe('rackOps — rack_row draw-ops', () => {
   const ops = rackRowOps(rack, GS)
+  const ups = ops.find(o => o.op === 'uprights')
+  const slots = ops.find(o => o.op === 'slots')
 
-  it('is a box plus ONE uprights op, not a node per bay', () => {
-    expect(ops).toHaveLength(2)
-    expect(ops[0].op).toBe('rect')
-    expect(ops[1].op).toBe('uprights')
+  it('is a box, ONE slots op and ONE uprights op — not a node per bay', () => {
+    expect(ops.map(o => o.op)).toEqual(['rect', 'slots', 'uprights'])
     expect(ops.filter(o => o.op === 'rect')).toHaveLength(1)
   })
 
@@ -63,11 +66,11 @@ describe('rackOps — rack_row draw-ops', () => {
   })
 
   it('draws every upright frame — both ends and each interior one: bays + 1', () => {
-    expect(ops[1].rects).toHaveLength(bays + 1)
+    expect(ups.rects).toHaveLength(bays + 1)
   })
 
   it('runs every upright the full height of the box', () => {
-    for (const r of ops[1].rects) {
+    for (const r of ups.rects) {
       expect(r.y).toBeCloseTo(rack.y, 6)
       expect(r.y + r.h).toBeCloseTo(rack.y + rack.height, 6)
     }
@@ -75,36 +78,54 @@ describe('rackOps — rack_row draw-ops', () => {
 
   it('keeps every upright inside the box, at the frame positions uprightXs gives', () => {
     const { xs, upW } = uprightXs(rack, GS)
-    expect(ops[1].rects.map(r => r.x)).toEqual(xs)
-    for (const r of ops[1].rects) {
+    expect(ups.rects.map(r => r.x)).toEqual(xs)
+    for (const r of ups.rects) {
       expect(r.w).toBeCloseTo(upW, 9)
       expect(r.x).toBeGreaterThanOrEqual(rack.x - 1e-9)
       expect(r.x + r.w).toBeLessThanOrEqual(rack.x + rack.width + 1e-9)
     }
   })
 
-  it('uses the locked palette — soft border, filled uprights', () => {
-    expect(ops[0].fill).toBe(RACK_PALETTE.fill)
-    expect(ops[0].stroke).toBe(RACK_PALETTE.border)
-    expect(ops[1].fill).toBe(RACK_PALETTE.upright)
+  it('has no fill; its outline and frames are the pallet navy, its slots the pallet tint', () => {
+    expect(ops[0].fill).toBeNull()
+    expect(ops[0].stroke).toBe(RACK_FAMILIES.pallet.line)
+    expect(ups.fill).toBe(RACK_FAMILIES.pallet.line)
+    expect(slots.stroke).toBe(RACK_FAMILIES.pallet.tint)
+    expect(slots.dash).toEqual([4, 3])
+    expect(slots.strokeWidth).toBe(1)
   })
 
-  it('carries the box stroke in SCREEN px; the uprights carry no screen floor (real width at every zoom)', () => {
-    expect(ops[0].strokeWidth).toBeLessThanOrEqual(1.5)
-    expect(ops[1].minPx).toBeUndefined()
+  it('carries the outline in SCREEN px (1.25); the uprights carry no screen floor (real width at every zoom)', () => {
+    expect(ops[0].strokeWidth).toBe(RACK_LINE.edge)
+    expect(RACK_LINE.edge).toBe(1.25)
+    expect(ups.minPx).toBeUndefined()
+  })
+
+  it('draws one slot per pallet position: 2 per 96″ bay, each inside its bay', () => {
+    expect(slots.rects).toHaveLength(2 * bays)
+    const { xs, upW } = uprightXs(rack, GS)
+    for (const r of slots.rects) {
+      const i = xs.findIndex((x, k) => k < xs.length - 1 && r.x >= x + upW - 1e-6 && r.x + r.w <= xs[k + 1] + 1e-6)
+      expect(i).toBeGreaterThanOrEqual(0)
+      expect(r.y).toBeGreaterThan(rack.y); expect(r.y + r.h).toBeLessThan(rack.y + rack.height)
+    }
+  })
+
+  it('a bay too short for a pallet has no slot (the same count as its positions)', () => {
+    const short = rackRowOps({ ...rack, beams: [30, 96] }, GS).find(o => o.op === 'slots')
+    expect(short.rects).toHaveLength(2)
   })
 
   it('a single-bay rack still has its two end frames', () => {
     const one = rackRowOps({ ...rack, beams: [96] }, GS)
-    expect(one).toHaveLength(2)
-    expect(one[1].rects).toHaveLength(2)
+    expect(one.find(o => o.op === 'uprights').rects).toHaveLength(2)
   })
 })
 
 describe('rackOps — dispatch and level of detail', () => {
   it('draws full detail regardless of zoom — no level-of-detail collapse', () => {
     const ops = rackDrawOps(rack, { gridSize: GS })
-    expect(ops).toHaveLength(2)
+    expect(ops).toHaveLength(3)
     expect(ops.some(o => o.op === 'uprights')).toBe(true)   // bay structure always present
   })
 
@@ -156,6 +177,16 @@ describe('rackOps — dispatch and level of detail', () => {
   it('is pure — same object in, same ops out', () => {
     expect(rackRowOps(rack, GS)).toEqual(rackRowOps(rack, GS))
   })
+
+  /* (rack-design) no rack type draws a fill anywhere (a cantilever's clear hit body aside) */
+  it('fills nothing, on any rack type', () => {
+    for (const t of PORTED_RACK_TYPES) {
+      for (const o of rackDrawOps({ ...rack, type: t, height: 400 }, { gridSize: GS })) {
+        if (o.op === 'rect') expect(o.fill == null || o.fill === 'transparent', `${t} fills its ${o.op}`).toBe(true)
+        if (o.op === 'lines' || o.op === 'slots') expect(o.fill, t).toBeUndefined()
+      }
+    }
+  })
 })
 
 /* Double row: two bands of `depth`, a real flue between them,
@@ -168,19 +199,16 @@ const dbl = {
 
 /* BUG 59 — the flue gap carries NO visual marker at all: the two row rects
  * are drawn with the real gap between them and nothing drawn on top of it,
- * no line and no fill. This is a deliberate divergence from the SVG
- * reference (which draws a thin centred hairline, BUG 58's own port) — the
- * bare gap, at its own real width, is what reads as a flue now. */
+ * no line and no fill. The bare gap, at its own real width, reads as a flue. */
 describe('rackOps — rack_double_row draw-ops', () => {
   const ops       = rackDoubleRowOps(dbl, GS)
-  const bands     = ops.filter(o => o.op === 'rect' && o.fill === RACK_PALETTE.fill)
+  const bands     = ops.filter(o => o.op === 'rect' && o.border)
   const dividers  = ops.find(o => o.op === 'uprights')
 
-  it('is two bands and one uprights op — no flue marker of any kind', () => {
+  it('is two bands, one slots op and one uprights op — no flue marker of any kind', () => {
     expect(bands).toHaveLength(2)
     expect(dividers).toBeTruthy()
-    expect(ops).toHaveLength(3)
-    expect(ops.some(o => o.stroke === RACK_PALETTE.flue || o.fill === RACK_PALETTE.flue)).toBe(false)
+    expect(ops.map(o => o.op)).toEqual(['rect', 'rect', 'slots', 'uprights'])
   })
 
   it('splits the height as depth + flue + depth, exactly filling the box — the gap itself stays UNMARKED', () => {
@@ -192,6 +220,8 @@ describe('rackOps — rack_double_row draw-ops', () => {
     expect(bot.y + bot.h).toBeCloseTo(dbl.y + dbl.height, 6)
     // the gap between the two bands is real (not a zero-height seam)
     expect(bot.y - (top.y + top.h)).toBeCloseTo(flueHPx, 6)
+    // nothing drawn in it: every slot is inside a band
+    for (const r of ops.find(o => o.op === 'slots').rects) expect(r.y + r.h <= top.y + top.h + 1e-9 || r.y >= bot.y - 1e-9).toBe(true)
   })
 
   it('draws uprights on BOTH bands from one op — 2 frames per upright line', () => {
@@ -208,12 +238,11 @@ describe('rackOps — rack_double_row draw-ops', () => {
 
   it('honours a custom flue dimension — the gap itself resizes, still with no marker', () => {
     const wide = rackDoubleRowOps({ ...dbl, flueSpaceIn: 12 }, GS)
-    const wideBands = wide.filter(o => o.op === 'rect' && o.fill === RACK_PALETTE.fill)
+    const wideBands = wide.filter(o => o.op === 'rect' && o.border)
     const [top, bot] = wideBands
     const gapLo = top.y + top.h, gapHi = bot.y
     expect(gapHi - gapLo).toBeCloseTo(GS, 6)   // a 12" flue measures 12" of real gap
-    expect(wide).toHaveLength(3)
-    expect(wide.some(o => o.stroke === RACK_PALETTE.flue || o.fill === RACK_PALETTE.flue)).toBe(false)
+    expect(wide).toHaveLength(4)
   })
 
   it('degrades to a plain box if the flue would swallow the rack', () => {
@@ -223,20 +252,25 @@ describe('rackOps — rack_double_row draw-ops', () => {
   })
 
   it('keeps both bands at any zoom — no lod collapse', () => {
-    expect(rackDrawOps(dbl, { gridSize: GS })).toHaveLength(3)
+    expect(rackDrawOps(dbl, { gridSize: GS })).toHaveLength(4)
   })
 
   it('falls back to a bare box only for geometry it cannot subdivide', () => {
     const broken = rackDrawOps({ ...dbl, flueSpaceIn: 1000 }, { gridSize: GS })
     expect(broken).toEqual(rackBoxOps(dbl))
   })
+
+  it('a double-deep pair: a dashed line between its deep positions, and a slot for each', () => {
+    const dd = { ...dbl, deep: 2, deepGapIn: 6, depthIn: 42, height: (((42 * 2 + 6) * 2 + flueIn) / 12) * GS }
+    const o = rackDoubleRowOps(dd, GS)
+    expect(o.find(x => x.name === 'deep-line').dash).toEqual([4, 3])
+    expect(o.find(x => x.op === 'slots').rects).toHaveLength(2 * bays * 2 * 2)   // pallets × bays × faces × deep
+  })
 })
 
-/* Uprights drawn to scale: a 3" frame is 3" wide at working zoom; only the
- * screen-px floor (the old hairline width) applies when 3" would be thinner
- * than that on screen. */
+/* Uprights drawn to scale: a 3" frame is 3" wide at every zoom (the canvas floors it at 1 screen px, a screen matter). */
 describe('rackOps — uprights drawn to scale', () => {
-  const op = rackRowOps(rack, GS)[1]
+  const op = rackRowOps(rack, GS).find(o => o.op === 'uprights')
   const upPx = (upIn / 12) * GS   // 3" = 10 world px
 
   it('the drawn width is exactly uprightWidth (3" = 10 world px), on the frame, whatever the zoom', () => {
@@ -249,7 +283,7 @@ describe('rackOps — uprights drawn to scale', () => {
   })
 
   it('a 4" frame draws 4" wide (13.33 world px)', () => {
-    const four = rackRowOps({ ...rack, uprightWidth: 4, width: ((4 * (bays + 1) + beamIn * bays) / 12) * GS }, GS)[1]
+    const four = rackRowOps({ ...rack, uprightWidth: 4, width: ((4 * (bays + 1) + beamIn * bays) / 12) * GS }, GS).find(o => o.op === 'uprights')
     for (const d of uprightDrawRects(four, 10)) expect(d.w).toBeCloseTo((4 / 12) * GS, 9)
   })
 
@@ -262,6 +296,7 @@ describe('rackOps — uprights drawn to scale', () => {
     })
   })
 })
+
 
 describe('rackOps — bayAtPoint hit test', () => {
   const { xs, upW } = uprightXs(rack, GS)

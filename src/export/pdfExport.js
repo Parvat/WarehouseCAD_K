@@ -46,7 +46,7 @@ import { bayLedger } from '../utils/bayLedger'
 import { getFpVertices, insetPolygon } from '../utils/canvas'
 import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { expandColumnGrid } from '../generate/columnCheck'
-import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, travelArrowGeom } from '../render/rackOps'
+import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, arrowGeom } from '../render/rackOps'
 import { aisleLabelOps, aisleLabelBoxes, clearanceOpsAll, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { sectionLegend } from '../utils/sectionLegend'
@@ -260,6 +260,7 @@ function columnGridSVG(obj, gridSize, objects = null) {
    canvas calls, not reinvented. `lz` is the sheet's label scale: the travel
    arrows are drawing size, like the labels. */
 function opToSVG(o, lz) {
+  void lz   // (rack-design) a rack's arrows and words are real sizes, not the label size
   if (o.op === 'rect') {
     return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" ` +
       `fill="${o.fill || 'none'}" stroke="${o.stroke || 'none'}" stroke-width="${o.strokeWidth ?? 1}" ` +
@@ -276,12 +277,29 @@ function opToSVG(o, lz) {
       uprightDrawRects(o).map(r => `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`).join('') +
       `</g>`
   }
-  /* Travel arrows: drawing size at the sheet's label size (travelArrowGeom,
-     the same geometry the canvas draws). */
+  /* (rack-design) hairlines and the dashed pallet slots — the same lines the canvas draws, no fill */
+  if (o.op === 'lines') {
+    return `<path d="${o.d}" fill="none" stroke="${o.stroke}" stroke-width="${o.strokeWidth ?? 1}" ` +
+      `${o.dash ? `stroke-dasharray="${o.dash}"` : ''} opacity="${o.opacity ?? 1}"/>`
+  }
+  if (o.op === 'slots') {
+    return `<g fill="none" stroke="${o.stroke}" stroke-width="${o.strokeWidth ?? 1}" stroke-dasharray="${o.dash}">` +
+      o.rects.map(r => `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`).join('') + `</g>`
+  }
+  if (o.op === 'dots') {
+    let s = ''
+    for (let k = 0; k < o.pts.length; k += 2) s += `<circle cx="${o.pts[k]}" cy="${o.pts[k + 1]}" r="${o.r}"/>`
+    return `<g fill="${o.fill}">${s}</g>`
+  }
+  if (o.op === 'text') {
+    return `<text x="${o.x}" y="${o.y + o.size * 0.82}" font-size="${o.size}" text-anchor="middle" ` +
+      `font-family="Plus Jakarta Sans, sans-serif" font-weight="${o.bold ? 700 : 600}" fill="${o.color}"` +
+      `${o.halo ? ` stroke="#FFFFFF" stroke-width="${o.size * 0.35}" stroke-linejoin="round" paint-order="stroke"` : ''}>${o.text}</text>`
+  }
+  /* Travel arrows: world size, inside the lane's front pallet (arrowGeom, the same geometry the canvas draws). */
   if (o.op === 'arrows') {
-    const g = travelArrowGeom(o, lz)
-    return `<g stroke="${o.color}" fill="${o.color}" stroke-width="${g.strokeWidth}">` +
-      g.arrows.map(a => `<line x1="${a.shaft[0]}" y1="${a.shaft[1]}" x2="${a.shaft[2]}" y2="${a.shaft[3]}"/>` +
+    return `<g stroke="${o.color}" fill="${o.color}" stroke-width="${o.strokeWidth}">` +
+      arrowGeom(o).map(a => `<line x1="${a.shaft[0]}" y1="${a.shaft[1]}" x2="${a.shaft[2]}" y2="${a.shaft[3]}"/>` +
         `<polygon points="${a.head[0]},${a.head[1]} ${a.head[2]},${a.head[3]} ${a.head[4]},${a.head[5]}"/>`).join('') + `</g>`
   }
   return ''

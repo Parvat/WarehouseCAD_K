@@ -3218,7 +3218,7 @@ describe('REG — the hand check by real clicks', () => {
       })
       const { labels, dims } = await read()
       expect(labels.length).toBeGreaterThan(0)
-      expect([...new Set(labels.map(l => l.fill))]).toEqual(['#767C74'])
+      expect([...new Set(labels.map(l => l.fill))]).toEqual(['#55605A'])   // (rack-design — was: #767C74, the drawings' words)
       // the aisle labels' size rule: the same drawing size as an aisle width label's text
       const aisleFs = await L.page.evaluate(() => window.Konva.stages[0].find(n => /^aisle:/.test(n.name()))[0]?.findOne('Text')?.fontSize() ?? null)
       if (aisleFs != null) expect([...new Set(labels.map(l => Math.round(l.px / labels[0].px * 1000)))]).toEqual([1000])
@@ -9231,7 +9231,8 @@ describe('REG — the hand check by real clicks', () => {
       const card = L.page.locator('[data-island="right-card"]')
       const rail = L.page.locator('[data-island="rail"]')
       let n = 0
-      for (const name of ['Drive-In Rack', 'Drive-Through Rack', 'Pushback Rack', 'Pallet Flow Rack']) {
+      // (rack-design — was: Drive-In Rack, Drive-Through Rack, Pushback Rack, Pallet Flow Rack)
+      for (const name of ['Drive-in', 'Drive-through', 'Push-back', 'Pallet flow']) {
         await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300)
         await L.page.getByRole('menu', { name: 'Racking library' }).getByRole('menuitem', { name, exact: true }).click(); await L.page.waitForTimeout(400)
         const at = { x: 330 + n * 160, y: 300 }
@@ -9242,7 +9243,7 @@ describe('REG — the hand check by real clicks', () => {
         const capCard = await L.S('return Promise.all([import("/src/utils/capacity.js"), import("/src/utils/elevations.js")]).then(([C, E]) => C.getRackCapacity(S.getState().objects.find(q => q.id === arg), undefined, E.levelsResolver(S.getState().elevations)).total)', o.id)
         expect([name, capCard]).toEqual([name, want])
         // its card shows it (Drive-In, Drive-Through, Pushback carry a Capacity line)
-        if (!/Pallet Flow/.test(name)) expect(await card.getByText(want + ' PAL', { exact: true }).count()).toBeGreaterThanOrEqual(1)
+        if (!/Pallet flow/.test(name)) expect(await card.getByText(want + ' PAL', { exact: true }).count()).toBeGreaterThanOrEqual(1)
         n++
       }
       // the layout's total is the sum
@@ -9250,7 +9251,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(sum[0]).toBe(sum[1])
       // a Selective rack: unchanged (bays × pallets per beam × levels, as before)
       await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300)
-      await L.page.getByRole('menu', { name: 'Racking library' }).getByRole('menuitem', { name: 'Selective Rack', exact: true }).click(); await L.page.waitForTimeout(400)
+      await L.page.getByRole('menu', { name: 'Racking library' }).getByRole('menuitem', { name: 'Selective', exact: true }).click(); await L.page.waitForTimeout(400)
       await L.page.mouse.move(500, 500); await L.page.waitForTimeout(150); await L.page.mouse.click(500, 500); await L.page.waitForTimeout(300)
       const sel = await L.S('return S.getState().objects.slice(-1)[0]')
       const selCap = await L.S('return Promise.all([import("/src/utils/capacity.js"), import("/src/utils/elevations.js")]).then(([C, E]) => C.getRackCapacity(S.getState().objects.find(q => q.id === arg), undefined, E.levelsResolver(S.getState().elevations)).total)', sel.id)
@@ -9732,7 +9733,7 @@ describe('REG — the hand check by real clicks', () => {
       await basicsClearRacks()
       const sp = (await openSpot(14)) || (await openSpot(8)) || (await openSpot(3)), v = await viewAt(), at = v.s(sp.x, sp.y)
       const rec = () => {}
-      const rack = await libraryMake('Racking', 'Drive-In Rack', at)(rec)
+      const rack = await libraryMake('Racking', 'Drive-in', at)(rec)
       expect(rack).toBeTruthy()
       const R = await L.S('return H.worldBoundsOf(S.getState().objects.find(o => o.id === arg), S.getState().objects)', rack)
       const mid = await L.toScreen({ x: R.x + R.width / 2, y: R.y + R.height / 2 })
@@ -9815,7 +9816,7 @@ describe('REG — the hand check by real clicks', () => {
       await open()
       await basicsClearRacks()
       const sp = (await openSpot(14)) || (await openSpot(8)) || (await openSpot(3)), v = await viewAt(), at = v.s(sp.x, sp.y)
-      const id = await libraryMake('Racking', 'Double-deep Rack', at)(() => {})
+      const id = await libraryMake('Racking', 'Double-deep', at)(() => {})
       expect(id).toBeTruthy()
       const gs = await gs7(), objNow = () => L.S('return S.getState().objects.find(o => o.id === arg)', id)
       let o = await objNow()
@@ -10102,7 +10103,7 @@ describe('REG — the hand check by real clicks', () => {
         if (r) { at = v.s(r.x, r.y); there = { x: at.x + 40, y: at.y } }
         it.there = there
       }
-      it.make = async (rec) => libraryMake('Racking', 'Selective Rack', at)(rec)
+      it.make = async (rec) => libraryMake('Racking', 'Selective', at)(rec)
       return it
     }
     const libraryItems = async (section) => {
@@ -10234,6 +10235,182 @@ describe('REG — the hand check by real clicks', () => {
       // each line has its ticks and two dashed extension lines
       expect(await L.page.evaluate(() => window.Konva.stages[0].find('.fp-dim-line').map(g => g.find('Line').filter(l => (l.dash() || []).length).length))).toEqual([2, 2])
       await L.page.keyboard.press('Escape')
+    }, T)
+
+    /* ── rack-design (design/rack-plan-colour.png, design/rack-library.png) ── */
+    /** the pixels drawn for an object on its own Konva layer, over its box: how many are each of `colours` (± 24 per
+     *  channel), and how many are the old rack fill (#DCE8DC) */
+    const rackPixels = (id, colours) => L.page.evaluate(({ id, colours }) => {
+      const st = window.Konva.stages[0]; st.draw()
+      const g = st.findOne(n => n.name() === 'obj:' + id); if (!g) return null
+      const layer = g.getLayer(), cv = layer.getCanvas(), pr = cv.getPixelRatio(), r = g.getClientRect()
+      const x = Math.max(0, Math.floor(r.x * pr)), y = Math.max(0, Math.floor(r.y * pr)), w = Math.max(1, Math.ceil(r.width * pr)), h = Math.max(1, Math.ceil(r.height * pr))
+      const d = cv._canvas.getContext('2d').getImageData(x, y, w, h).data
+      const hex = (s) => [1, 3, 5].map(i => parseInt(s.slice(i, i + 2), 16))
+      const near = (i, c, t = 24) => Math.abs(d[i] - c[0]) <= t && Math.abs(d[i + 1] - c[1]) <= t && Math.abs(d[i + 2] - c[2]) <= t && d[i + 3] > 200
+      const cs = colours.map(hex), old = hex('#DCE8DC'), out = { counts: colours.map(() => 0), oldFill: 0 }
+      for (let i = 0; i < d.length; i += 4) { cs.forEach((c, k) => { if (near(i, c)) out.counts[k]++ }); if (near(i, old, 6)) { out.oldFill++; const h = '#' + [d[i], d[i + 1], d[i + 2]].map(v => v.toString(16).padStart(2, '0')).join(''); out.oldAt = out.oldAt || {}; out.oldAt[h] = (out.oldAt[h] || 0) + 1 } }
+      return out
+    }, { id, colours })
+
+    it('REG-rack-design-look (click): a selective rack and a back-to-back pair are drawn in the pallet navy with their slots in its tint and no fill (none of the old #DCE8DC); a click selects one — a 2 px #2F6FD6 outline 4 px outside it and a white square handle edged in that blue at each corner — and its own lines keep their navy', async () => {
+      await open()
+      for (const type of ['rack_row', 'rack_double_row']) {
+        const r = await L.S('const st = S.getState(), rs = st.objects.filter(o => o.type === arg); const o = rs[Math.floor(rs.length / 2)]; return { id: o.id, b: H.worldBoundsOf(o, st.objects) }', type)
+        // a point on it, a third of the way across its short side (off a pair's flue), at its middle along its length
+        const hitAt = (b) => (b.width >= b.height ? { x: b.x + b.width / 2, y: b.y + b.height * 0.3 } : { x: b.x + b.width * 0.3, y: b.y + b.height / 2 })
+        // zoomed to it at 100 %
+        await L.S('S.setState({ zoom: 1, panX: 560 - (arg.x + arg.width / 2), panY: 450 - (arg.y + arg.height / 2), selectedIds: [] })', r.b); await L.page.waitForTimeout(300)
+        const px = await rackPixels(r.id, ['#2B3A67', '#8C95B5'])
+        expect([type, px.counts[0] > 50, px.counts[1] > 20, px.oldFill, px.oldAt || null]).toEqual([type, true, true, 0, null])
+        // a click on it: selected
+        await L.click(hitAt(r.b)); await L.page.waitForTimeout(250)
+        expect([type, await L.S('return S.getState().selectedIds'), await L.S('const st = S.getState(); return H.pickAt(st.objects, st.layers, arg.x, arg.y, st.zoom, st.gridSize)', hitAt(r.b))]).toEqual([type, [r.id], expect.anything()])
+        const sel = await L.page.evaluate((id) => {
+          const st = window.Konva.stages[0], g = st.findOne(n => n.name() === 'sel:' + id)
+          const rects = g.find('Rect'), o = rects[0], corners = rects.filter(n => n.name() === 'sel-corner')
+          const z = st.scaleX()
+          const cr = o.getClientRect({ skipStroke: true }), v = { z, x: st.x(), y: st.y() }
+          return { stroke: o.stroke(), sw: o.strokeWidth(), cr, v, z, corners: corners.map(c => [c.fill(), c.stroke()]), cw: corners.length ? corners[0].width() * z : 0 }
+        }, r.id)
+        // the outline's box on screen: the rack's, 4 px out on every side
+        expect([sel.stroke, sel.sw]).toEqual(['#2F6FD6', 2])
+        const want = { x: r.b.x * sel.v.z + sel.v.x - 4, y: r.b.y * sel.v.z + sel.v.y - 4, width: r.b.width * sel.v.z + 8, height: r.b.height * sel.v.z + 8 }
+        expect(['x', 'y', 'width', 'height'].map(k => Math.abs(sel.cr[k] - want[k]) < 0.5)).toEqual([true, true, true, true])
+        expect(sel.corners).toEqual(Array(4).fill(['#FFFFFF', '#2F6FD6']))
+        expect(Math.round(sel.cw)).toBe(7)
+        // selected, its lines keep the navy
+        const px2 = await rackPixels(r.id, ['#2B3A67'])
+        expect(px2.counts[0] > 50).toBe(true)
+        await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(150)
+      }
+    }, T)
+
+    const onceIt = name === 'older-horizontal' || name === 'crowded-vertical' ? it : () => {}
+    onceIt('REG-rack-library (click): the Racking flyout — narrow (fits its longest name, no gap on the right), a search box, PALLET · LANE · FLOW · OTHER with 28 px rows and a 20×16 glyph in each family colour; a row hovered shows its tooltip right of the panel after 300 ms (not before); typing filters across the groups and hides the empty ones; Up / Down move, Enter picks — one rack follows the mouse, a click places it, back to Select; Esc clears the search, then closes; no Rack Row (multi-bay)', async () => {
+      await open()
+      const rail = L.page.locator('[data-island="rail"]'), menu = L.page.getByRole('menu', { name: 'Racking library' })
+      const openLib = async () => { if (!(await menu.count())) { await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300) } }
+      await openLib()
+      const look = await menu.evaluate(m => {
+        const rows = [...m.querySelectorAll('[role=menuitem]')], r = m.getBoundingClientRect()
+        const widest = Math.max(...rows.map(b => { const s = b.querySelector('span'); return s.getBoundingClientRect().right }))
+        return { w: Math.round(r.width), gapRight: Math.round(r.right - widest), fits: m.scrollWidth <= m.clientWidth + 1, rowH: [...new Set(rows.map(b => Math.round(b.getBoundingClientRect().height)))],
+          glyph: rows.map(b => { const s = b.querySelector('svg'); return [s.getAttribute('width'), s.getAttribute('height')].join('×') })[0],
+          colours: rows.map(b => b.querySelector('svg [stroke]:not([stroke=none])')?.getAttribute('stroke')), fs: getComputedStyle(rows[0]).fontSize }
+      })
+      expect(look.w).toBeLessThanOrEqual(170); expect(look.w).toBeGreaterThanOrEqual(130)
+      expect(look.gapRight).toBeLessThanOrEqual(24)
+      expect([look.fits, look.rowH, look.glyph, look.fs]).toEqual([true, [28], '20×16', '13px'])
+      expect(look.colours).toEqual(['#8FA0D8', '#8FA0D8', '#8FA0D8', '#5BC193', '#5BC193', '#E3A456', '#E3A456', '#B79BE0', '#B79BE0', '#A9AFAA'])
+      expect(await menu.getByRole('group').evaluateAll(g => g.map(x => x.getAttribute('aria-label')))).toEqual(['Pallet', 'Lane', 'Flow', 'Other'])
+      expect(await menu.getByRole('menuitem').allTextContents()).not.toContain('Rack Row (multi-bay)')
+      expect(await L.page.getByRole('searchbox', { name: 'Search racking' }).count()).toBe(1)
+      // the tooltip: not at 100 ms, there by 450 ms, right of the panel, beside its row
+      const row = menu.getByRole('menuitem', { name: 'Drive-in' })
+      await row.hover(); await L.page.waitForTimeout(100)
+      expect(await L.page.getByRole('tooltip').count()).toBe(0)
+      await L.page.waitForTimeout(350)
+      const tip = await L.page.getByRole('tooltip').evaluate(t => { const r = t.getBoundingClientRect(); return { text: t.textContent, x: r.left, y: r.top + r.height / 2 } })
+      const pb = await menu.boundingBox(), rb = await row.boundingBox()
+      expect(tip.text).toBe('One entry, last in first out')
+      expect([tip.x >= pb.x + pb.width, Math.abs(tip.y - (rb.y + rb.height / 2)) <= 2]).toEqual([true, true])
+      // search: across the groups, the empty ones hidden
+      await L.page.getByRole('searchbox', { name: 'Search racking' }).click()
+      await L.page.keyboard.type('drive')
+      expect(await menu.getByRole('menuitem').allTextContents()).toEqual(['Drive-in', 'Drive-through'])
+      expect(await menu.getByRole('group').evaluateAll(g => g.map(x => x.getAttribute('aria-label')))).toEqual(['Lane'])
+      // Up / Down move the active row (wrapping)
+      const activeNow = () => menu.locator('[data-active]').textContent()
+      expect(await activeNow()).toBe('Drive-in')
+      await L.page.keyboard.press('ArrowDown'); expect(await activeNow()).toBe('Drive-through')
+      await L.page.keyboard.press('ArrowDown'); expect(await activeNow()).toBe('Drive-in')
+      await L.page.keyboard.press('ArrowUp'); expect(await activeNow()).toBe('Drive-through')
+      // Esc clears the search (all rows back), then closes
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      expect([await menu.count(), (await menu.getByRole('menuitem').allTextContents()).length]).toEqual([1, 10])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(100)
+      expect(await menu.count()).toBe(0)
+      // Enter picks: "back" → Back-to-back first; it follows the mouse, a click places one, then Select
+      await openLib()
+      await L.page.keyboard.type('back'); await L.page.waitForTimeout(100)
+      expect(await activeNow()).toBe('Back-to-back')
+      const n0 = await L.S('return S.getState().objects.filter(o => o.type === "rack_double_row").length')
+      await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(400)
+      expect(await menu.count()).toBe(0)
+      const placing = () => L.S('return !!PL.usePlacement.getState().active')
+      expect(await placing()).toBe(true)
+      const spot = await L.floorPoint(); const sp = await L.toScreen(spot)
+      await L.page.mouse.move(sp.x, sp.y); await L.page.waitForTimeout(150); await L.page.mouse.click(sp.x, sp.y); await L.page.waitForTimeout(300)
+      const placedOne = (await L.S('return S.getState().objects.filter(o => o.type === "rack_double_row").length')) - n0
+      if (placedOne === 0) { await L.page.keyboard.press('Escape') }   // blocked where it stood (a crowded spot): Esc, nothing placed
+      expect([placedOne <= 1, await placing(), await L.S('return S.getState().activeTool')]).toEqual([true, false, 'select'])
+    }, T)
+
+    onceIt('REG-rack-library-keep (click): a double-click on a library rack keeps it on (Rule 9) — each click on the plan places one and the next follows the mouse, one undo each; Esc ends it with nothing more placed, back to Select; a single click places one and is done', async () => {
+      await open()
+      await L.S('S.setState({ objects: S.getState().objects.filter(o => !(typeof o.type === "string" && (o.type.startsWith("rack_") || o.type === "aisle" || o.type === "section_area" || o.type === "racking_area"))) })')
+      const fp = await fpOf()
+      await L.S('const z = 0.15; S.setState({ zoom: z, panX: 560 - (arg.x + arg.width / 2) * z, panY: 450 - (arg.y + arg.height / 2) * z })', fp); await L.page.waitForTimeout(300)
+      const rail = L.page.locator('[data-island="rail"]'), menu = L.page.getByRole('menu', { name: 'Racking library' })
+      const racks = () => L.S('return S.getState().objects.filter(o => o.type === "rack_row").length')
+      const placing = () => L.S('return !!PL.usePlacement.getState().active')
+      await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300)
+      await menu.getByRole('menuitem', { name: 'Selective', exact: true }).dblclick(); await L.page.waitForTimeout(500)
+      const h0 = await L.S('return S.getState().historyIndex')
+      for (const [x, y] of [[420, 330], [420, 470], [420, 610]]) { await L.page.mouse.move(x, y); await L.page.waitForTimeout(120); await L.page.mouse.click(x, y); await L.page.waitForTimeout(300) }
+      expect([await racks(), await placing()]).toEqual([3, true])
+      expect((await L.S('return S.getState().historyIndex')) - h0).toBe(3)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      await L.page.mouse.click(700, 330); await L.page.waitForTimeout(250)
+      expect([await racks(), await placing(), await L.S('return S.getState().activeTool')]).toEqual([3, false, 'select'])
+      // one undo per rack
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      expect(await racks()).toBe(2)
+      // a single click: one, then done
+      await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300)
+      await menu.getByRole('menuitem', { name: 'Selective', exact: true }).click(); await L.page.waitForTimeout(500)
+      await L.page.mouse.move(700, 470); await L.page.waitForTimeout(120); await L.page.mouse.click(700, 470); await L.page.waitForTimeout(300)
+      expect([await racks(), await placing()]).toEqual([3, false])
+    }, T)
+
+    onceIt('REG-rack-row-file (click): a saved layout with a Rack Row (multi-bay) — gone from the library — still loads, draws in the pallet navy, selects by a click, edits (Add bay, one undo) and saves back', async () => {
+      const B = await import('./handCheck/browser.js'), j = JSON.parse(B.fixture(name))
+      const fp = j.objects.find(o => /^fp_/.test(o.type)), GSZ = j.gridSize || 40
+      const beams = [96, 96, 96, 96, 96], w = ((3 * 6 + 96 * 5) / 12) * GSZ
+      // an open spot: the fixture's racks left out, this Rack Row in the building's middle, as the old library placed one
+      j.objects = j.objects.filter(o => !(typeof o.type === 'string' && (o.type.startsWith('rack_') || o.type === 'aisle' || o.type === 'section_area' || o.type === 'racking_area')))
+      j.objects.push({ id: 'rackrow1', type: 'rack_row', label: 'Rack Row (multi-bay)', x: fp.x + fp.width / 2 - w / 2, y: fp.y + fp.height / 2, width: w, height: (42 / 12) * GSZ, beams, uprightWidth: 3, palletWIn: 40, palletDIn: 48, levels: 4, layerId: 'racking', parentId: fp.id, rotation: 0, strokeWidth: 1.5, opacity: 1 })
+      L = await B.openLayout(app, JSON.stringify(j))
+      const o = await L.S('return S.getState().objects.find(q => q.id === "rackrow1") || null')
+      expect(o && o.beams.length).toBe(5)
+      await L.S('S.setState({ zoom: 0.5, panX: 560 - (arg.x + arg.width / 2) * 0.5, panY: 450 - (arg.y + arg.height / 2) * 0.5 })', o); await L.page.waitForTimeout(300)
+      const px = await rackPixels('rackrow1', ['#2B3A67'])
+      expect(px && px.counts[0] > 30).toBe(true)
+      await L.click({ x: o.x + o.width / 2, y: o.y + o.height / 2 }); await L.page.waitForTimeout(250)
+      expect(await L.S('return S.getState().selectedIds')).toEqual(['rackrow1'])
+      await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Add bay', exact: true }).click(); await L.page.waitForTimeout(300)
+      expect(await L.S('return S.getState().objects.find(q => q.id === "rackrow1").beams.length')).toBe(6)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(await L.S('return S.getState().objects.find(q => q.id === "rackrow1").beams.length')).toBe(5)
+      // saved: it goes back out as it came in
+      expect(await L.S('const j = JSON.parse(SL.serializeScene(S.getState())); const r = j.objects.find(q => q.id === "rackrow1"); return [r.type, r.label, r.beams.length]')).toEqual(['rack_row', 'Rack Row (multi-bay)', 5])
+    }, T)
+
+    onceIt('REG-pixel-ratio (click): the canvas draws at the screen\'s pixel density and follows it when it changes (browser zoom, another screen): every layer at 1, then at 2 after the change, then back at 1', async () => {
+      await open()
+      const ratios = () => L.page.evaluate(() => [...new Set(window.Konva.stages[0].getLayers().map(l => l.getCanvas().getPixelRatio()))])
+      expect(await ratios()).toEqual([1])
+      const cdp = await L.page.context().newCDPSession(L.page)
+      try {
+        // (headless Chromium changes the ratio without the resize event a real browser zoom sends: it is sent here)
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false }); await L.page.evaluate(() => window.dispatchEvent(new Event('resize'))); await L.page.waitForTimeout(500)
+        expect(await L.page.evaluate(() => window.devicePixelRatio)).toBe(2)
+        expect(await ratios()).toEqual([2])
+      } finally {
+        await cdp.send('Emulation.clearDeviceMetricsOverride'); await L.page.evaluate(() => window.dispatchEvent(new Event('resize'))); await L.page.waitForTimeout(500)
+      }
+      expect(await ratios()).toEqual([1])
     }, T)
   })
 })

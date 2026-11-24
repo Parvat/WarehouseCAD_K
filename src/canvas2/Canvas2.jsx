@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, memo } from 'react'
 import { Stage, Layer, Shape } from 'react-konva'
 import { Scene } from './Scene'
+import { useDevicePixelRatio } from './pixelRatio'
 import { installMinText } from './minText'
 import { Overlays } from './Overlays'
 import { ResizeHandlesOverlay } from './ResizeHandlesOverlay'
@@ -190,6 +191,7 @@ export function Canvas2() {
   const [host, setHost] = useState(null)
   const stageRef = useRef(null)
   const size = useContainerSize(host)
+  useDevicePixelRatio(stageRef, size.w > 0 && size.h > 0)   // (rack-design) drawn at the screen's density, kept in step
 
   const gridSize = useCanvasStore(s => s.gridSize)
   const objects  = useCanvasStore(s => s.objects)

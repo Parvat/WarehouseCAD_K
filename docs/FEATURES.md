@@ -238,6 +238,7 @@ Details: [Platform plan](#platform-plan-details)
 | Dialog styling, Hub, Sign in | 1 | Partial — dialogs in Studio style; Hub and Sign in still the old skin |
 | Search anything (Rack A12, Door 3, Column C17) | 2 | Todo |
 | Dead-code cleanup | 1 | Partial — _svg_reference, unmounted LeftPanel/index.jsx, WarehouseObjectPicker, CustomObjects remain |
+| Rotate handle over a lane rack's top face word (a selected drive-through or pallet flow: ENTRY / LOAD under the handle) — from rack-design | 1 | Todo |
 
 ## 15. Separate apps on the same layout file
 

@@ -22,6 +22,7 @@ import { crossAisleLabels } from './crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { isEmptySide } from '../utils/bayEmpty'
 import { useFlued } from './dragPreview'   // (gen-lock)
+import { faceWordsReach } from '../render/rackOps'   // (rack-design)
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
    CanvasUI.jsx's RackLabels/FpSegmentDimLabels and CanvasOverlays.jsx's live
@@ -205,7 +206,8 @@ export function RackLabels({ obj: stored, zoom, gridSize }) {
     const laneWPx = ledgePx * 2 + clearPx * 2 + palletWPx
     const derivedW = (lanes + 1) * upW + lanes * laneWPx
 
-    const wY = by + bh + 14 / zoom
+    // (rack-design) past the face's words (ENTRY, LOAD, PICK), never over them
+    const wY = by + bh + faceWordsReach(obj, 'bottom', gridSize) + 14 / zoom
     nodes.push(<LabelPill key="width" cx={bx + derivedW / 2} cy={wY} text={fmtIn(derivedW)} fontSize={fs} zoom={zoom} color={clr} />)
     const dTxt = fmtIn(bh), dTw = dTxt.length * fs * 0.62 + (4 / zoom) * 2
     const lx = bx + derivedW + 6 / zoom + dTw / 2
@@ -213,7 +215,7 @@ export function RackLabels({ obj: stored, zoom, gridSize }) {
     // (lane-positions) lanes × deep × levels (utils/capacity.js), its levels from its elevation type
     const capR = getRackCapacity(obj, undefined, levelsResolver(useCanvasStore.getState().elevations)), cap = capR?.total ?? lanes * palletDeep
     const lTxt = `${lanes}L × ${palletDeep}D × ${capR?.levels ?? 1} · ${cap} PAL`
-    nodes.push(<LabelPill key="lanes" cx={bx + derivedW / 2} cy={by - 14 / zoom} text={lTxt} fontSize={fs} zoom={zoom} color={clr} />)
+    nodes.push(<LabelPill key="lanes" cx={bx + derivedW / 2} cy={by - faceWordsReach(obj, 'top', gridSize) - 14 / zoom} text={lTxt} fontSize={fs} zoom={zoom} color={clr} />)
   }
 
   if (!nodes.length) return null

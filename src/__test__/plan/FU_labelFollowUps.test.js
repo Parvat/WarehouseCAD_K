@@ -13,7 +13,7 @@ import { rackFootprint, checkColumns, MHE_PROFILES } from '../../generate/column
 import { layoutColumns } from '../../generate/usableCapacity'
 import { DEFAULT_RULES } from '../../rules/defaults'
 import { rebuildAisles } from '../../utils/aisleRebuild'
-import { rackDrawOps, uprightDrawRects, travelArrowGeom } from '../../render/rackOps'
+import { rackDrawOps, uprightDrawRects, arrowGeom } from '../../render/rackOps'
 import { LABEL_SIZES, labelScale, aisleLabelScale, autoPdfLabelInches } from '../../render/labelSize'
 import { aisleLabelOps, blockedFaceOps } from '../../render/labelOps'
 import { columnGridOps, COLUMN_OPACITY } from '../../render/columnDraw'
@@ -125,23 +125,22 @@ describe('FU — arrows, sizes, columns', () => {
   const lane = { id: 'l1', type: 'rack_drive_in', x: 50, y: 60, width: 600, height: 300, lanes: 4, uprightWidth: 4 }
   const op = rackDrawOps(lane, { gridSize: GS }).find(o => o.op === 'arrows')
 
-  it('FU-arrows: travel arrows are drawing size — their length, head, gap and stroke scale with Label size, and the painter and the PDF use it', () => {
-    const s = travelArrowGeom(op, labelScale('small', GS)), x = travelArrowGeom(op, labelScale('xlarge', GS))
-    expect(x.strokeWidth / s.strokeWidth).toBeCloseTo(4, 9)                          // 48 in / 12 in
-    x.arrows.forEach((a, i) => {
-      const lenS = Math.abs(s.arrows[i].shaft[1] - s.arrows[i].head[3]), lenX = Math.abs(a.shaft[1] - a.head[3])
-      expect(lenX / lenS).toBeCloseTo(4, 9)
-    })
+  it('FU-arrows: (rack-design — was: drawing size, scaled by the Label size) travel arrows are REAL size, inside the lane\'s front pallet, like the rest of the rack — the same at every Label size, and the painter and the PDF draw them from the same geometry (arrowGeom)', () => {
+    const g = arrowGeom(op)
+    expect(g).toHaveLength(4)
+    for (const a of g) {
+      expect(a.shaft[1]).toBeLessThanOrEqual(lane.y + lane.height)
+      expect(a.head[3]).toBeGreaterThan(lane.y)
+    }
+    // nothing in the op reads a label scale: the same op, whatever the Label size
+    expect(Object.keys(op).sort()).toEqual(['color', 'head', 'items', 'op', 'strokeWidth'])
     const shapes = readFileSync('src/canvas2/shapes.jsx', 'utf8').split(String.fromCharCode(13)).join('')
-    expect(shapes).toMatch(/const g = travelArrowGeom\(o, lz\)/)
+    expect(shapes).toMatch(/for \(const a of arrowGeom\(o\)\)/)
     expect(shapes).toMatch(/<Ops ops=\{ops\} listening=\{listening\} lz=\{lz\} \/>/)
     const ops = shapes.slice(shapes.indexOf('export function Ops('), shapes.indexOf('\n}\n', shapes.indexOf('export function Ops(')))
     expect(ops).not.toMatch(/getStage\(\)\?\.scaleX/)                                 // nothing in the op painter reads the zoom
-    const scene = readFileSync('src/canvas2/Scene.jsx', 'utf8')
-    expect(scene).toMatch(/const lz = labelScale\(useLabelPrefs\(s => s\.labelSize\), gridSize\)/)
-    expect(scene).toMatch(/<RackShape [^>]*lz=\{lz\}/)
     const pdf = readFileSync('src/export/pdfExport.js', 'utf8')
-    expect(pdf).toMatch(/const g = travelArrowGeom\(o, lz\)/)
+    expect(pdf).toMatch(/arrowGeom\(o\)\.map\(a =>/)
   })
 
   it('FU-sizes: (labels-cad — was: Extra large 48 in, a View-menu Label size and a PDF label size) one real text height per label type, the defaults as asked, saved with the project; the View card shows Text size with Reset; the layout menu no longer offers Label size or PDF label size', () => {

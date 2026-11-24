@@ -1,90 +1,61 @@
 import { describe, it, expect } from 'vitest'
 import {
   rackMezzanineOps, rackShelvingOps, rackDrawOps, bayAtPoint,
-  RACK_PALETTE, RACK_LINE, PORTED_RACK_TYPES,
+  RACK_LINE, PORTED_RACK_TYPES,
 } from '../render/rackOps'
+import { RACK_FAMILIES } from '../render/rackFamily'
 
 const GS = 40
-const deck = { id: 'm1', type: 'rack_mezzanine', x: 0, y: 0, width: 960, height: 480 }
-const shelf = { id: 's1', type: 'rack_shelving', x: 10, y: 20, width: 400, height: 120 }
+const deck = { id: 'm1', type: 'rack_mezzanine', x: 0, y: 0, width: 1200, height: 800 }   // 30′ × 20′
+const shelf = { id: 's1', type: 'rack_shelving', x: 10, y: 20, width: 960, height: 80, shelves: 5 }   // 24′ × 2′
 
+/* (rack-design — design/rack-plan-colour.png) A mezzanine is a raised floor, not a rack: grey, a dashed outline with a
+   thin cross, its posts along the edges, its name and size in the middle. */
 describe('rackOps — mezzanine', () => {
   const ops = rackMezzanineOps(deck, GS)
-  const grid = ops.find(o => o.op === 'path' && o.opacity === 0.3)
-  const stairs = ops.find(o => o.op === 'path' && o.fill === RACK_PALETTE.border)
+  const by = (n) => ops.find(o => o.name === n)
 
-  it('is a deck, a grid path and a stair path — three ops', () => {
-    expect(ops).toHaveLength(3)
-    expect(ops[0].op).toBe('rect')
-    expect(grid).toBeTruthy()
-    expect(stairs).toBeTruthy()
+  it('keeps a body for its hit area with no fill and no solid edge — the edge is dashed', () => {
+    expect(ops[0]).toMatchObject({ op: 'rect', border: true, fill: null, stroke: null, x: 0, y: 0, w: 1200, h: 800 })
+    expect(by('mezz-edge')).toMatchObject({ op: 'lines', stroke: RACK_FAMILIES.mezz.line, strokeWidth: RACK_LINE.mezz })
+    expect(by('mezz-edge').dash.length).toBe(2)
+    expect(by('mezz-edge').segs).toHaveLength(4 * 4)
   })
 
-  it('draws the deck at the object bounds', () => {
-    expect(ops[0]).toMatchObject({ x: deck.x, y: deck.y, w: deck.width, h: deck.height })
+  it('crosses corner to corner with a thin line', () => {
+    expect(by('mezz-cross').segs).toEqual([0, 0, 1200, 800, 1200, 0, 0, 800])
+    expect(by('mezz-cross').strokeWidth).toBe(RACK_LINE.hair)
   })
 
-  /* One division per ~6ft, so a bigger deck gains divisions rather than
-     stretching a fixed few across the whole span. */
-  it('gains grid divisions as the deck grows', () => {
-    const count = o => (rackMezzanineOps(o, GS)
-      .find(x => x.op === 'path' && x.opacity === 0.3)?.d.match(/M/g) || []).length
-    expect(count({ ...deck, width: 1920, height: 960 }))
-      .toBeGreaterThan(count(deck))
+  it('posts at the corners and along the edges, no more than 25 ft apart', () => {
+    const d = ops.find(o => o.op === 'dots')
+    expect(d.fill).toBe(RACK_FAMILIES.mezz.line)
+    // 30′ wide: 2 spans → 3 posts on each long edge; 20′: 1 span → corners only
+    expect(d.pts.length / 2).toBe(6)
+    const big = rackMezzanineOps({ ...deck, width: 2400 }, GS).find(o => o.op === 'dots')
+    expect(big.pts.length / 2).toBe(8)
   })
 
-  it('never collapses below a readable minimum grid', () => {
-    const tiny = rackMezzanineOps({ ...deck, width: 40, height: 40 }, GS)
-    const g = tiny.find(o => o.op === 'path' && o.opacity === 0.3)
-    // at least 3 columns and 2 rows => 2 vertical + 1 horizontal interior line
-    expect((g.d.match(/M/g) || []).length).toBeGreaterThanOrEqual(3)
-  })
-
-  it('keeps every grid line inside the deck', () => {
-    const xs = [...grid.d.matchAll(/M([\d.]+) ([\d.]+)L/g)].map(m => [+m[1], +m[2]])
-    for (const [gx, gy] of xs) {
-      expect(gx).toBeGreaterThanOrEqual(deck.x)
-      expect(gx).toBeLessThanOrEqual(deck.x + deck.width)
-      expect(gy).toBeGreaterThanOrEqual(deck.y)
-      expect(gy).toBeLessThanOrEqual(deck.y + deck.height)
-    }
-  })
-
-  it('runs four stair treads, stepping down and away', () => {
-    const treads = [...stairs.d.matchAll(/M([\d.]+) ([\d.]+)h/g)].map(m => [+m[1], +m[2]])
-    expect(treads).toHaveLength(4)
-    for (let i = 1; i < treads.length; i++) {
-      expect(treads[i][0]).toBeLessThan(treads[i - 1][0])      // stepping left
-      expect(treads[i][1]).toBeGreaterThan(treads[i - 1][1])   // and downward
-    }
-  })
-
-  it('keeps the deck grid faint so racks on top stay the stronger mark', () => {
-    expect(grid.opacity).toBeLessThan(0.5)
-    expect(stairs.opacity).toBeLessThan(1)
+  it('names itself and its size in the middle', () => {
+    expect(ops.filter(o => o.op === 'text').map(o => o.text)).toEqual(['MEZZANINE', '30′ × 20′'])
+    for (const t of ops.filter(o => o.op === 'text')) expect(Math.abs(t.x - 600)).toBeLessThan(1e-9)
   })
 })
 
+/* Shelving: hand-picked units, each outlined, with its shelf count inside. */
 describe('rackOps — shelving', () => {
   const ops = rackShelvingOps(shelf, GS)
-  const posts = ops[1], mid = ops[2]
 
-  it('is a box, both end frames in one path, and the shelf', () => {
-    expect(ops).toHaveLength(3)
-    expect((posts.d.match(/M/g) || []).length).toBe(2)
-    expect((mid.d.match(/M/g) || []).length).toBe(1)
+  it('outlines the run in the family colour, no fill', () => {
+    expect(ops[0]).toMatchObject({ op: 'rect', border: true, fill: null, stroke: RACK_FAMILIES.other.line })
   })
 
-  it('puts the end frames on the two ends and the shelf across the middle', () => {
-    expect(posts.d).toContain(`M${shelf.x} ${shelf.y}`)
-    expect(posts.d).toContain(`M${shelf.x + shelf.width} ${shelf.y}`)
-    expect(mid.d).toBe(
-      `M${shelf.x} ${shelf.y + shelf.height / 2}L${shelf.x + shelf.width} ${shelf.y + shelf.height / 2}`)
-  })
-
-  it('weights the end frames heavier than the shelf they carry', () => {
-    expect(posts.strokeWidth).toBeGreaterThan(mid.strokeWidth)
-    expect(posts.strokeWidth).toBeGreaterThan(RACK_LINE.edge)
+  it('splits the run into units about 4 ft wide, each with its shelf count inside', () => {
+    const units = ops.find(o => o.name === 'shelf-units')
+    expect(units.segs.length / 4).toBe(5)                       // 6 units: 5 lines between them
+    const counts = ops.filter(o => o.op === 'text')
+    expect(counts.map(o => o.text)).toEqual(Array(6).fill('5'))
+    for (const c of counts) expect(c.color).toBe(RACK_FAMILIES.other.line)
   })
 
   it('has no travel arrows — nothing drives into shelving', () => {

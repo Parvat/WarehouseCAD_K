@@ -1,23 +1,25 @@
 import { describe, it, expect } from 'vitest'
 import {
-  laneGeom, cantileverGeom,
+  laneGeom, cantileverGeom, arrowGeom, faceWordsReach, LANE_FACES,
   rackDriveInOps, rackDriveThroughOps, rackPushbackOps, rackPalletFlowOps,
   rackCantileverOps, rackDrawOps,
-  RACK_PALETTE, RACK_LINE, RACK_ARROW, PORTED_RACK_TYPES,
+  RACK_LINE, FACE_BAR_IN, FACE_TEXT_IN, SLOT_DASH, PORTED_RACK_TYPES,
 } from '../render/rackOps'
+import { RACK_FAMILIES } from '../render/rackFamily'
 
 const GS = 40
 
-/* Four lane types share one chassis and differ only in their cue, so these
-   tests are mostly about which cue showed up — that is what a reader has to
-   tell apart on the sheet. */
+/* (rack-design — design/rack-plan-colour.png) Four lane types share one chassis — lanes, each `palletDeep` pallets deep,
+   dashed slots — and differ in their cue: which faces carry a face bar and its word, and which way the arrows run. These
+   tests are mostly about which cue showed up — that is what a reader has to tell apart on the sheet. */
 const lane = {
   id: 'l1', type: 'rack_drive_in', x: 50, y: 60,
-  width: 600, height: 300, lanes: 4, uprightWidth: 4,
+  width: 600, height: 400, lanes: 4, palletDeep: 5, uprightWidth: 4,
 }
-const backWall = ops => ops.find(o =>
-  o.op === 'path' && o.stroke === RACK_PALETTE.structure)
 const arrows = ops => ops.find(o => o.op === 'arrows')
+const words = ops => ops.filter(o => o.op === 'text').map(o => ({ text: o.text, below: o.y > lane.y + lane.height / 2 }))
+const faceBars = ops => ops.find(o => o.name === 'face-bar')
+const slots = ops => ops.find(o => o.op === 'slots')
 
 describe('rackOps — lane geometry', () => {
   it('fills the object width exactly: posts + lanes = width', () => {
@@ -39,104 +41,129 @@ describe('rackOps — lane geometry', () => {
   })
 })
 
+describe('rackOps — lane racks: no fill, the family colours', () => {
+  it('draws no fill anywhere, and every line in its family colour (lane green, flow amber)', () => {
+    for (const [t, fam] of [['rack_drive_in', 'lane'], ['rack_drive_through', 'lane'], ['rack_pushback', 'flow'], ['rack_pallet_flow', 'flow']]) {
+      const ops = rackDrawOps({ ...lane, type: t }, { gridSize: GS })
+      const c = RACK_FAMILIES[fam]
+      expect(ops.some(o => o.op === 'rect' && o.fill), t).toBe(false)
+      expect(ops[0]).toMatchObject({ op: 'rect', border: true, stroke: c.line, strokeWidth: RACK_LINE.edge })
+      for (const o of ops) {
+        if (o.op === 'uprights') expect(o.fill, t + ' ' + o.name).toBe(c.line)
+        if (o.op === 'lines' || o.op === 'arrows' || o.op === 'text') expect(o.stroke || o.color, t).toBe(c.line)
+      }
+      expect(slots(ops).stroke, t).toBe(c.tint)
+    }
+  })
+
+  it('dashes every pallet slot 4 3 at 1 px: lanes × deep of them, each inside its lane', () => {
+    const s = slots(rackDriveInOps(lane, GS))
+    expect(s.dash).toEqual(SLOT_DASH)
+    expect(s.strokeWidth).toBe(1)
+    expect(s.rects).toHaveLength(4 * 5)
+    const { postXs, upW, laneW } = laneGeom(lane, GS)
+    for (const r of s.rects) {
+      const i = postXs.findIndex(px => r.x >= px + upW - 1e-6 && r.x + r.w <= px + upW + laneW + 1e-6)
+      expect(i).toBeGreaterThanOrEqual(0)
+      expect(r.y).toBeGreaterThan(lane.y); expect(r.y + r.h).toBeLessThan(lane.y + lane.height)
+    }
+  })
+})
+
 describe('rackOps — drive-in vs drive-through', () => {
   const di = rackDriveInOps(lane, GS)
   const dt = rackDriveThroughOps({ ...lane, type: 'rack_drive_through' }, GS)
 
-  it('closes the back on drive-in and leaves it open on drive-through', () => {
-    expect(backWall(di)).toBeTruthy()
-    expect(backWall(dt)).toBeFalsy()
+  it('puts ENTRY on the front face of a drive-in, on both faces of a drive-through', () => {
+    expect(words(di)).toEqual([{ text: 'ENTRY', below: true }])
+    expect(words(dt)).toEqual([{ text: 'ENTRY', below: false }, { text: 'ENTRY', below: true }])
   })
 
-  it('draws the back wall as a heavier rule across the FAR end', () => {
-    const w = backWall(di)
-    expect(w.strokeWidth).toBeGreaterThan(RACK_LINE.edge)
-    expect(w.d).toBe(`M${lane.x} ${lane.y}L${lane.x + lane.width} ${lane.y}`)
+  it('draws a 4" face bar on each entry face, centred on the face line, the rack\'s full width', () => {
+    const t = (FACE_BAR_IN / 12) * GS
+    expect(faceBars(di).rects).toEqual([{ x: lane.x, y: lane.y + lane.height - t / 2, w: lane.width, h: t }])
+    expect(faceBars(dt).rects).toHaveLength(2)
   })
 
-  it('puts arrows at one face for drive-in and both for drive-through', () => {
-    expect(arrows(di).items).toHaveLength(4)          // one per lane
-    expect(arrows(dt).items).toHaveLength(8)          // both ends
-    expect(new Set(arrows(di).items.map(i => i.side))).toEqual(new Set(['below']))
-    expect(new Set(arrows(dt).items.map(i => i.side))).toEqual(new Set(['below', 'above']))
+  it('posts a square at every pallet along each lane line', () => {
+    const posts = di.find(o => o.name === 'lane-posts')
+    expect(posts.rects).toHaveLength((4 + 1) * (5 + 1))
+    for (const r of posts.rects) expect(r.w).toBeCloseTo(r.h, 9)
   })
 
-  it('anchors every arrow to a rack edge, so none floats inside the box', () => {
-    for (const it of arrows(dt).items) {
-      expect([lane.y, lane.y + lane.height]).toContain(it.edgeY)
+  it('runs one arrow per lane, inside the front pallet, pointing into the lane', () => {
+    for (const ops of [di, dt]) {
+      const a = arrows(ops)
+      expect(a.items).toHaveLength(4)
+      const front = lane.y + lane.height - lane.height / 5
+      for (const it of a.items) {
+        expect(it.y1).toBeLessThan(it.y0)                       // up: into the lane
+        expect(Math.min(it.y0, it.y1)).toBeGreaterThan(front)   // inside the front pallet
+        expect(Math.max(it.y0, it.y1)).toBeLessThan(lane.y + lane.height)
+      }
     }
   })
 
-  it('carries arrow sizes in SCREEN px, so one size reads across the sheet', () => {
-    expect(arrows(di).len).toBe(RACK_ARROW.len)
-    expect(arrows(di).head).toBe(RACK_ARROW.head)
+  it('draws the arrow head at its tip (arrowGeom)', () => {
+    const [g] = arrowGeom(arrows(di))
+    const it = arrows(di).items[0]
+    expect(g.head[3]).toBeCloseTo(it.y1, 9)
+    expect(g.shaft[1]).toBeCloseTo(it.y0, 9)
+  })
+
+  it('sets the words at their real height, outside the face, past the face bar', () => {
+    const w = di.find(o => o.op === 'text')
+    expect(w.size).toBeCloseTo((FACE_TEXT_IN / 12) * GS, 9)
+    expect(w.y).toBeGreaterThan(lane.y + lane.height + (FACE_BAR_IN / 12) * GS / 2)
+    expect(faceWordsReach(lane, 'bottom', GS)).toBeGreaterThan(w.y + w.size - (lane.y + lane.height) - 1e-9)
+    expect(faceWordsReach(lane, 'top', GS)).toBe(0)
   })
 })
 
-describe('rackOps — push-back carts', () => {
+describe('rackOps — push-back and pallet flow', () => {
   const pb = rackPushbackOps({ ...lane, type: 'rack_pushback', palletDeep: 4 }, GS)
-  const carts = pb.filter(o => o.op === 'path' && o.stroke === RACK_PALETTE.border)
+  const pf = rackPalletFlowOps({ ...lane, type: 'rack_pallet_flow', palletDeep: 4 }, GS)
 
-  it('draws every cart in ONE path, not a rect each', () => {
-    expect(carts).toHaveLength(1)
-    expect((carts[0].d.match(/M/g) || []).length).toBe(4 * 4)   // lanes x deep
+  it('push-back: LOAD · PICK on its one face, arrows pushing back into the lane', () => {
+    expect(words(pb)).toEqual([{ text: 'LOAD · PICK', below: true }])
+    for (const it of arrows(pb).items) expect(it.y1).toBeLessThan(it.y0)
   })
 
-  it('nests the carts — the deepest is the narrowest', () => {
-    const widths = [...carts[0].d.matchAll(/M[-\d.]+ [-\d.]+h([\d.]+)/g)].map(m => +m[1])
-    expect(widths[0]).toBeLessThan(widths[3])   // back of lane narrower than front
+  it('pallet flow: LOAD at the back, PICK at the front, arrows rolling toward the pick face', () => {
+    expect(words(pf)).toEqual([{ text: 'LOAD', below: false }, { text: 'PICK', below: true }])
+    for (const it of arrows(pf).items) expect(it.y1).toBeGreaterThan(it.y0)
   })
 
-  it('clamps depth to something drawable', () => {
-    const deep = rackPushbackOps({ ...lane, type: 'rack_pushback', palletDeep: 99 }, GS)
-      .find(o => o.op === 'path' && o.stroke === RACK_PALETTE.border)
-    expect((deep.d.match(/M/g) || []).length).toBe(4 * 8)       // capped at 8
-  })
-})
-
-describe('rackOps — pallet flow rollers', () => {
-  const pf = rackPalletFlowOps({ ...lane, type: 'rack_pallet_flow' }, GS)
-  const rails = pf.find(o => o.op === 'path' && o.stroke === RACK_PALETTE.roller)
-
-  it('runs two dashed rails per lane, from one path', () => {
-    expect(rails).toBeTruthy()
-    expect((rails.d.match(/M/g) || []).length).toBe(4 * 2)
-    expect(rails.dash).toBeTruthy()
+  it('frames each lane with a full-depth post (the flow racks), not a post per pallet', () => {
+    const posts = pb.find(o => o.name === 'lane-posts')
+    expect(posts.rects).toHaveLength(4 + 1)
+    for (const r of posts.rects) expect(r.h).toBeCloseTo(lane.height, 9)
   })
 
-  it('owns the roller ochre — no other type uses it', () => {
-    expect(rackDriveInOps(lane, GS).some(o => o.stroke === RACK_PALETTE.roller)).toBe(false)
-  })
-
-  it('keeps the rails inside the box', () => {
-    const ys = [...rails.d.matchAll(/M[-\d.]+ ([\d.]+)L/g)].map(m => +m[1])
-    for (const y of ys) expect(y).toBeGreaterThan(lane.y)
+  it('names its faces in one table (LANE_FACES), which the builders draw from', () => {
+    expect(Object.keys(LANE_FACES).sort()).toEqual(['rack_drive_in', 'rack_drive_through', 'rack_pallet_flow', 'rack_pushback'])
   })
 })
 
-describe('rackOps — cantilever', () => {
-  const cant = { ...lane, type: 'rack_cantilever', towers: [36, 36, 36], doubleSided: true }
+describe('rackOps — cantilever (from above)', () => {
+  const cant = { ...lane, type: 'rack_cantilever', towers: [36, 36, 36], doubleSided: true, height: 260 }
   const ops = rackCantileverOps(cant, GS)
-  const posts = ops.filter(o => o.op === 'path' && o.fill === RACK_PALETTE.structure)
-  const armsP = ops.find(o => o.op === 'path' && o.fill === RACK_PALETTE.fill)
-  const brace = ops.find(o => o.op === 'path' && o.stroke === RACK_PALETTE.structure)
+  const by = (n) => ops.find(o => o.name === n)
 
-  it('draws a spine, an X-brace, one arms path and one posts path', () => {
-    expect(ops.some(o => o.op === 'rect' && o.fill === RACK_PALETTE.structure)).toBe(true)
-    expect(brace).toBeTruthy()
-    expect(armsP).toBeTruthy()
-    expect(posts).toHaveLength(1)
+  it('draws the column line (the spine), a square at each column, each arm, and the arms\' reach dashed', () => {
+    expect(by('spine').rects).toHaveLength(1)
+    expect(by('columns').rects).toHaveLength(3)
+    expect(by('arm-reach').dash).toEqual(SLOT_DASH)
+    expect(by('arm-reach').stroke).toBe(RACK_FAMILIES.other.tint)
+    for (const n of ['spine', 'columns', 'arms']) expect(by(n).fill).toBe(RACK_FAMILIES.other.line)
   })
 
-  it('crosses the brace corner to corner across the spine', () => {
-    expect((brace.d.match(/M/g) || []).length).toBe(2)
-  })
-
-  it('throws arms BOTH ways when double-sided and one way when not', () => {
+  it('throws arms BOTH ways when double-sided and one way when not, with a reach zone each side', () => {
     const single = rackCantileverOps({ ...cant, doubleSided: false }, GS)
-      .find(o => o.op === 'path' && o.fill === RACK_PALETTE.fill)
-    expect((armsP.d.match(/M/g) || []).length).toBe(3 * 2)
-    expect((single.d.match(/M/g) || []).length).toBe(3)
+    expect(by('arms').rects).toHaveLength(3 * 2)
+    expect(single.find(o => o.name === 'arms').rects).toHaveLength(3)
+    expect(by('arm-reach').rects).toHaveLength(2)
+    expect(single.find(o => o.name === 'arm-reach').rects).toHaveLength(1)
   })
 
   it('spreads towers across the whole width, first to last', () => {
@@ -187,7 +214,7 @@ describe('rackOps — every newly ported type actually draws', () => {
 describe('rackOps — consolidation holds as racks get bigger', () => {
   it('keeps a lane rack at a fixed op count however many lanes', () => {
     const small = rackPalletFlowOps({ ...lane, type: 'rack_pallet_flow', lanes: 2 }, GS)
-    const big   = rackPalletFlowOps({ ...lane, type: 'rack_pallet_flow', lanes: 40 }, GS)
+    const big   = rackPalletFlowOps({ ...lane, type: 'rack_pallet_flow', lanes: 6, width: 1800 }, GS)
     expect(big.length).toBe(small.length)
   })
 
@@ -200,7 +227,7 @@ describe('rackOps — consolidation holds as racks get bigger', () => {
 
   it('keeps push-back at a fixed op count however deep', () => {
     const a = rackPushbackOps({ ...lane, type: 'rack_pushback', palletDeep: 2 }, GS)
-    const b = rackPushbackOps({ ...lane, type: 'rack_pushback', palletDeep: 8, lanes: 20 }, GS)
+    const b = rackPushbackOps({ ...lane, type: 'rack_pushback', palletDeep: 8, lanes: 6, width: 1800, height: 1600 }, GS)
     expect(b.length).toBe(a.length)
   })
 })
