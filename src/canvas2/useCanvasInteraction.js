@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { setSmartGuides } from './SmartGuideLines'   // (gen-lock)
 const NO_GUIDES = []
 import Konva from 'konva'
-import { hitTest, hitTestBay, fpWallHitTest, boundsOf } from './hitTest'
+import { hitTest, hitTestBay, fpWallHitTest, boundsOf, stackAt } from './hitTest'
 import { handleHitTest, cursorForHandle, hasResizeHandles, objHasResizeHandles } from './handleGeometry'
 import { finishAreaResize } from '../utils/rackingAreaTool'
 import { bayHalfAt, setFlueHover } from '../utils/baySides'
@@ -966,6 +966,21 @@ export function useCanvasInteraction({
       if (!hitId && evt.button === 0 && (onFloor ? st.activeTool !== TOOLS.PAN : st.activeTool === TOOLS.SELECT)) {
         marqueeRef.current = { from: world, sx: evt.clientX, sy: evt.clientY, moved: false, clickHitId: null, shift: false, floor: true, click: clickTarget }
         return
+      }
+
+      /* (rack-fixes 3) Tab then drag: the selection is an object stacked UNDER the one on top here (Tab took it — or a click
+         on it where it shows): a drag moves the selected object, not the one drawn over it. A click without a drag still
+         picks the topmost (Rule 9 — on the release). Never the building or a section under the pointer: those are the
+         floor, and a press on a rack in a selected building still moves that rack. */
+      if (hitId && evt.button === 0 && !evt.shiftKey && st.selectedIds.length && !st.selectedIds.includes(hitId)) {
+        const under = stackAt(st.objects, st.layers, world.x, world.y, view.current.zoom, st.gridSize || 40)
+        const target = under.find(id => st.selectedIds.includes(id))
+        const tObj = target && st.objects.find(o => o.id === target)
+        if (tObj && !FP_SET_INPUT.has(tObj.type) && tObj.type !== 'section_area' && tObj.type !== 'racking_area' && isPickable(st.layers, tObj)) {
+          const top = hitId
+          beginDrag(target, world, evt)
+          if (objDrag.current) { objDrag.current.click = () => selectFromHit(top, false, world); return }
+        }
       }
 
       if (hitId) {

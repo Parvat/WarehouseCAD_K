@@ -225,9 +225,10 @@ export function Ops({ ops, opacity = 1, listening = false, lz = DEFAULT_LZ }) {
           return (
             <Shape key={i} name="rack-arrows" listening={false} perfectDrawEnabled={false} opacity={(o.opacity ?? 1) * opacity}
               sceneFunc={(ctx) => {
-                const c = ctx._context, t = c.getTransform(), s = Math.hypot(t.a, t.b) || 1, pr = pixelRatioOf(ctx)
+                // (rack-fixes 2) a REAL width (world px, ARROW_STROKE_IN): it scales with the drawing, no screen floor
+                const c = ctx._context
                 c.strokeStyle = o.color; c.fillStyle = o.color
-                c.lineWidth = (o.strokeWidth * pr) / s
+                c.lineWidth = o.strokeWidth
                 for (const a of arrowGeom(o)) {
                   c.beginPath(); c.moveTo(a.shaft[0], a.shaft[1]); c.lineTo(a.shaft[2], a.shaft[3]); c.stroke()
                   c.beginPath(); c.moveTo(a.head[0], a.head[1]); c.lineTo(a.head[2], a.head[3]); c.lineTo(a.head[4], a.head[5])

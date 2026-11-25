@@ -59,6 +59,7 @@ import { equipmentResolver, designNotes } from '../utils/equipment'
 import { crossAisleLabels } from '../canvas2/crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
+import { overlapMarks, overlapOps } from '../render/overlapOps'   // (rack-fixes 1)
 import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { textLz, textHeight } from '../utils/textSizes'
 import { buildCheckSheets } from './checkSheet'
@@ -283,7 +284,7 @@ function opToSVG(o, lz) {
       `${o.dash ? `stroke-dasharray="${o.dash}"` : ''} opacity="${o.opacity ?? 1}"/>`
   }
   if (o.op === 'slots') {
-    return `<g fill="none" stroke="${o.stroke}" stroke-width="${o.strokeWidth ?? 1}" stroke-dasharray="${o.dash}">` +
+    return `<g fill="none" stroke="${o.stroke}" stroke-width="${o.strokeWidth ?? 1}" stroke-dasharray="${o.dash}"${o.opacity != null ? ` opacity="${o.opacity}"` : ''}>` +
       o.rects.map(r => `<rect x="${r.x}" y="${r.y}" width="${r.w}" height="${r.h}"/>`).join('') + `</g>`
   }
   if (o.op === 'dots') {
@@ -382,6 +383,8 @@ export function labelsSVG(objects, gridSize, opts) {
       // a face with less than the pick width in front of it (narrowAisles.js): the same X marks, as on screen
       for (const c of narrowAisleBlocks(objects, { profile: opts.profile, gridSize, already: blockedKeys(res), elevations: opts.elevations })) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
       for (const o of racks) if ((o.type === 'rack_row' || o.type === 'rack_double_row') && Array.isArray(o.beams) && o.beams.length) ops.push(...oversizedOps(o, gridSize, lz))
+      // (rack-fixes 1) two racks overlapping, one not a beam rack: the red X on each covered position, as on screen
+      ops.push(...overlapOps(overlapMarks(objects, gridSize), lz))
     }
   }
   return `<g class="labels">${ops.map(labelOpToSVG).join('')}</g>`

@@ -91,8 +91,10 @@ describe('rackOps — rack_row draw-ops', () => {
     expect(ops[0].stroke).toBe(RACK_FAMILIES.pallet.line)
     expect(ups.fill).toBe(RACK_FAMILIES.pallet.line)
     expect(slots.stroke).toBe(RACK_FAMILIES.pallet.tint)
-    expect(slots.dash).toEqual([4, 3])
-    expect(slots.strokeWidth).toBe(1)
+    // (rack-fixes 4) a beam rack's slots lighter: 0.75 px, dash 2 3, the tint at 55 %
+    expect(slots.dash).toEqual([2, 3])
+    expect(slots.strokeWidth).toBe(0.75)
+    expect(slots.opacity).toBe(0.55)
   })
 
   it('carries the outline in SCREEN px (1.25); the uprights carry no screen floor (real width at every zoom)', () => {

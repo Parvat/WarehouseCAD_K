@@ -91,12 +91,22 @@ describe('rackOps — drive-in vs drive-through', () => {
     for (const r of posts.rects) expect(r.w).toBeCloseTo(r.h, 9)
   })
 
-  it('runs one arrow per lane, inside the front pallet, pointing into the lane', () => {
+  it('runs one arrow per lane, inside the front pallet, pointing into the lane (a drive-through: one more per lane at the top end, pointing down into it — rack-fixes 2)', () => {
+    {
+      const a = arrows(dt)
+      expect(a.items).toHaveLength(8)
+      const back = lane.y + lane.height / 5
+      const top = a.items.filter(it => it.y1 > it.y0)
+      expect(top).toHaveLength(4)
+      for (const it of top) { expect(Math.max(it.y0, it.y1)).toBeLessThan(back); expect(Math.min(it.y0, it.y1)).toBeGreaterThan(lane.y) }
+      expect(arrows(di).items).toHaveLength(4)
+    }
     for (const ops of [di, dt]) {
       const a = arrows(ops)
-      expect(a.items).toHaveLength(4)
       const front = lane.y + lane.height - lane.height / 5
-      for (const it of a.items) {
+      const up = a.items.filter(it => it.y1 < it.y0)
+      expect(up).toHaveLength(4)
+      for (const it of up) {
         expect(it.y1).toBeLessThan(it.y0)                       // up: into the lane
         expect(Math.min(it.y0, it.y1)).toBeGreaterThan(front)   // inside the front pallet
         expect(Math.max(it.y0, it.y1)).toBeLessThan(lane.y + lane.height)

@@ -149,7 +149,7 @@ describe.each(['horizontal', 'vertical'])('PX — %s', (orientation) => {
     for (const pr of [1, 2]) for (const zoom of [0.3, 0.5, 1, 2]) for (const [px, py] of PANS) for (const r of [...racks.slice(0, 4), lanes]) {
       const m = deviceMatrix(r, zoom, px, py, pr)
       for (const o of rackDrawOps(r, { gridSize: GS }).filter(q => q.op === 'lines' || q.op === 'slots')) {
-        const lw = Math.max(1, Math.round(o.strokeWidth * pr))   // its device width (a lane line 1.5 px — rack-design-match)
+        const raw = o.strokeWidth * pr, lw = raw >= 1 ? Math.max(1, Math.round(raw)) : raw   // its device width (a lane line 1.5 px — rack-design-match; a beam slot 0.75 px at ratio 1 — rack-fixes 4)
         const xs = [], calls = []
         const c = { getTransform: () => m, setTransform: () => {}, save: () => {}, restore: () => {}, setLineDash: () => {}, beginPath: () => {}, stroke: () => {},
           moveTo: (x, y) => calls.push([x, y]), lineTo: (x, y) => calls.push([x, y]), set lineWidth(v) { xs.push(v) }, set strokeStyle(v) { void v } }

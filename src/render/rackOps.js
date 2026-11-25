@@ -45,10 +45,16 @@ export const RACK_PALETTE = {
   conflict:  '#C0392B',
 }
 
-/** Screen widths (px): the outline, a hairline (lane lines, deep lines), a slot's dash line, the travel arrow. */
-export const RACK_LINE = { edge: 1.25, hair: 1, lane: 1.5, slot: 1, arrow: 2, mezz: 3 }   // (rack-design-match) lane 1.5, arrow 2, mezz 3 — as the mockup
+/** Screen widths (px): the outline, a hairline (lane lines, deep lines), a slot's dash line, the mezzanine's edge. (The
+ *  travel arrow's was here as 2 px; it is a real width now — ARROW_STROKE_IN, rack-fixes 2.) */
+export const RACK_LINE = { edge: 1.25, hair: 1, lane: 1.5, slot: 1, mezz: 3 }   // (rack-design-match) lane 1.5, arrow 2, mezz 3 — as the mockup
 /** The pallet slots' dash, screen px. */
 export const SLOT_DASH = [4, 3]
+/** (rack-fixes 4) A beam rack's pallet slots (selective, back-to-back, double-deep): lighter — 0.75 px, dash 2 3, the
+ *  family tint at 55 %. Every other rack keeps SLOT_DASH at RACK_LINE.slot. */
+export const BEAM_SLOT = { strokeWidth: 0.75, dash: [2, 3], opacity: 0.55 }
+/** (rack-fixes 2) A travel arrow's stroke, REAL inches — it scales with the drawing like the face bars (was 2 screen px). */
+export const ARROW_STROKE_IN = 2
 /** A face bar's real depth, inches (ENTRY / LOAD / PICK). */
 export const FACE_BAR_IN = 4
 /** The face words' real height, inches. */
@@ -93,7 +99,7 @@ function linesOp(segs, stroke, strokeWidth = RACK_LINE.hair, extra = {}) {
 }
 
 /** Dashed pallet slots, one op. */
-const slotsOp = (rects, stroke) => (rects.length ? { op: 'slots', rects, stroke, strokeWidth: RACK_LINE.slot, dash: SLOT_DASH } : null)
+const slotsOp = (rects, stroke, style = null) => (rects.length ? { op: 'slots', rects, stroke, strokeWidth: RACK_LINE.slot, dash: SLOT_DASH, ...(style || {}) } : null)
 
 /** Every upright frame of a beam rack, drawn to scale: a filled rect at the
  *  frame's real width (`uprightWidth`, 3" default) across each band — one
@@ -176,7 +182,7 @@ export function rackRowOps(obj, gridSize) {
   const c = colorsOf(obj)
   const ops = [body(x, y, w, h, c.line)]
   const band = [{ y, h, dir: 1 }]
-  const slots = slotsOp(beamSlotRects(obj, xs, upW, band, gridSize), c.tint)
+  const slots = slotsOp(beamSlotRects(obj, xs, upW, band, gridSize), c.tint, BEAM_SLOT)
   if (slots) ops.push(slots)
   const uprights = uprightsOp(xs, upW, band, c.line)
   if (uprights) ops.push(uprights)
@@ -206,7 +212,7 @@ export function rackDoubleRowOps(obj, gridSize) {
   const bands = [{ y: topY, h: rowH, dir: 1 }, { y: botY, h: rowH, dir: -1 }]
   const ops = [body(x, topY, w, rowH, c.line), body(x, botY, w, rowH, c.line)]
   const empty = hasEmpty(obj)
-  const slots = slotsOp(beamSlotRects(obj, xs, upW, bands, gridSize, empty ? (i, s) => isEmptySide(obj, i, s) : null), c.tint)
+  const slots = slotsOp(beamSlotRects(obj, xs, upW, bands, gridSize, empty ? (i, s) => isEmptySide(obj, i, s) : null), c.tint, BEAM_SLOT)
   if (slots) ops.push(slots)
   if (empty) {
     const n = xs.length - 1, rects = []
@@ -286,13 +292,20 @@ function laneOps(obj, gridSize, { faces, arrows, posts }) {
   for (const side of ['top', 'bottom']) if (faces[side]) bars.push(faceBar(obj, side, gridSize))
   if (bars.length) ops.push({ op: 'uprights', name: 'face-bar', rects: bars, fill: c.line })
 
-  // the arrows, in the front (bottom) pallet of each lane
+  /* the arrows, in the front (bottom) pallet of each lane — 'both' (drive-through, rack-fixes 2): a pair per lane, the
+     bottom end's pointing up into the lane, the top end's (in the back pallet) pointing down into it. Real size, length
+     and stroke (ARROW_STROKE_IN): they scale with the drawing like the face bars, never thicker as the view zooms out. */
   if (arrows) {
-    const s0 = y + h - sd + inset, s1 = y + h - inset, len = Math.max(0, (s1 - s0) * 0.7), mid = (s0 + s1) / 2
+    const len = Math.max(0, (sd - inset * 2) * 0.7)
     if (len > 0) {
       const head = Math.min(len * 0.32, laneW * 0.25)
-      const items = laneCx.map(cx => (arrows === 'up' ? { x: cx, y0: mid + len / 2, y1: mid - len / 2 } : { x: cx, y0: mid - len / 2, y1: mid + len / 2 }))
-      ops.push({ op: 'arrows', items, head, color: c.line, strokeWidth: RACK_LINE.arrow })
+      const front = y + h - sd / 2, back = y + sd / 2, items = []
+      for (const cx of laneCx) {
+        if (arrows === 'up' || arrows === 'both') items.push({ x: cx, y0: front + len / 2, y1: front - len / 2 })
+        if (arrows === 'down') items.push({ x: cx, y0: front - len / 2, y1: front + len / 2 })
+        if (arrows === 'both') items.push({ x: cx, y0: back - len / 2, y1: back + len / 2 })
+      }
+      ops.push({ op: 'arrows', items, head, color: c.line, strokeWidth: inch(ARROW_STROKE_IN, gridSize) })
     }
   }
   for (const side of ['top', 'bottom']) if (faces[side]) ops.push(faceText(obj, side, faces[side], c.line, gridSize))
@@ -327,7 +340,7 @@ export function faceWordsReach(obj, side, gridSize = 40) {
 /** DRIVE-IN · LIFO — one entry: a face bar and ENTRY on the front, arrows into each lane. */
 export const rackDriveInOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_drive_in, arrows: 'up', posts: 'squares' })
 /** DRIVE-THROUGH · FIFO — an entry at both ends. */
-export const rackDriveThroughOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_drive_through, arrows: 'up', posts: 'squares' })
+export const rackDriveThroughOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_drive_through, arrows: 'both', posts: 'squares' })
 /** PUSH-BACK · LIFO — one face loads and picks; the carts push back into the lane. */
 export const rackPushbackOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_pushback, arrows: 'up', posts: 'bars' })
 /** PALLET FLOW · FIFO — loaded at the back, picked at the front, the pallets rolling toward the pick face. */

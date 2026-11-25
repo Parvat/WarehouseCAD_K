@@ -11,6 +11,8 @@ import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
+import { LabelOps } from './LabelOps'
+import { overlapMarks, overlapOps } from '../render/overlapOps'   // (rack-fixes 1)
 import { aisleLabelLayout, labelBlockersOf as columnRectsOf, aisleGapShown } from './hitTest'   // (d2-labels) columns + drawn objects
 import { useLabelPrefs } from './labelPrefs'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -83,6 +85,7 @@ function OverlaysView({
      them rigidly — one group offset, nothing re-derived — so they follow it as before: only the other drags defer */
   const carriesAll = useMemo(() => !!movingIds && objects.every(o => !feedsOverlays(o) || movingIds.has(o.id)), [objects, movingIds])
   const deferMarks = marksPart && !chromePart && dragNow && !carriesAll
+  const liveObjects = objects   // (rack-fixes 1) the store's, before the deferral: the overlap marks follow the drag
   if (deferMarks) objects = settledObjects
   /* Every label and mark here is DRAWING size (render/labelSize.js): sized by
      the Label size setting, never by the view zoom, so zooming re-renders
@@ -139,6 +142,10 @@ function OverlaysView({
     const narrow = narrowAisleBlocks(pObjects, { profile: mhe, gridSize, already: blockedKeys({ rackConflicts, pickBlocks }), elevations })
     return narrow.length ? [...cols, ...narrow] : cols
   }, [rackConflicts, pickBlocks, pObjects, mhe, gridSize, marksOn, elevations])
+  /* (rack-fixes 1) two racks overlapping where one is not a beam rack (a drive-in on a selective, two flow racks …): a red X
+     on each position of either the other covers, from the previewed layout — while dragging and after the drop */
+  const overlapSrc = useMemo(() => (marksOn ? previewObjects(liveObjects, { ids: ids0, dx: dx0, dy: dy0 }) : null), [marksOn, liveObjects, ids0, dx0, dy0])
+  const overlapRed = useMemo(() => (overlapSrc ? overlapOps(overlapMarks(overlapSrc, gridSize), lz) : []), [overlapSrc, gridSize, lz])
   /* The marks sit on their rack (spin(obj)), so moving the rack and moving the
      group are the same drawing. Aisle labels round a measured gap to a label
      and pick label stations by length, so a shifted layout can, at a float
@@ -218,6 +225,8 @@ function OverlaysView({
       {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
       {marksOn && <OversizedBayMarks objects={pObjects} gridSize={gridSize} lz={lz} />}
       </Group>
+      {/* (rack-fixes 1) drawn from the live preview (never deferred, never in the rigid group: already moved) */}
+      {overlapRed.length > 0 && <LabelOps ops={overlapRed} name="rack-overlap" />}
       {/* Smart-guide alignment lines, live during a plain object drag —
           CanvasArea's own colours (wall/column snaps purple, object-to-
           object snaps green) and dash, ported. Stroke width is a plain

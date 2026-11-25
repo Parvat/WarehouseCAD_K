@@ -27,7 +27,8 @@ export function paintHairlines(ctx, o) {
     for (const r of o.rects) segs.push(r.x, r.y, r.x + r.w, r.y, r.x + r.w, r.y, r.x + r.w, r.y + r.h, r.x + r.w, r.y + r.h, r.x, r.y + r.h, r.x, r.y + r.h, r.x, r.y)
   }
   if (!segs || !segs.length) return
-  const lw = Math.max(1, Math.round(o.strokeWidth * pr))
+  // (rack-fixes 4) under one device px (a beam rack's 0.75 px slots at ratio 1): that fraction, antialiased, not rounded up
+  const raw = o.strokeWidth * pr, lw = raw >= 1 ? Math.max(1, Math.round(raw)) : raw
   c.save()
   c.strokeStyle = o.stroke
   if (isAxisAligned(m)) {

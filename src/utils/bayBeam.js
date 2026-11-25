@@ -117,6 +117,7 @@ export function wallClearAlong(obj, objects, gridSize = 40) {
 }
 
 const isRack = (o) => typeof o.type === 'string' && o.type.startsWith('rack_')
+const MEZZ = 'rack_mezzanine'
 
 /** Two drawn rack boxes overlap (separating-axis test; touching edges don't count). */
 function boxesOverlap(a, b, eps = 0.01) {
@@ -158,7 +159,8 @@ export function sharesFrame(a, b, gridSize = 40) {
  *  overlap: sharesFrame) and how far (inches) its drawn box passes the building's inner wall
  *  (0 = inside). */
 export function rackIssues(obj, objects, gridSize = 40) {
-  const overlaps = objects.filter(o => o.id !== obj.id && isRack(o) && o.width > 0 && o.height > 0 && boxesOverlap(obj, o) && !sharesFrame(obj, o, gridSize)).map(o => o.id)
+  // (rack-fixes 1) a mezzanine is a platform: racks stand under it, so it overlaps nothing and nothing overlaps it
+  const overlaps = obj.type === MEZZ ? [] : objects.filter(o => o.id !== obj.id && isRack(o) && o.type !== MEZZ && o.width > 0 && o.height > 0 && boxesOverlap(obj, o) && !sharesFrame(obj, o, gridSize)).map(o => o.id)
   let wallOutIn = 0
   const fp = obj.parentId ? objects.find(o => o.id === obj.parentId) : null
   if (fp) {
