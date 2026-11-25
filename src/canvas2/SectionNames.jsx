@@ -27,8 +27,8 @@ import { innerOutline } from '../utils/floorGeom'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
 import { aisleLabelBoxes } from '../render/labelOps'
-import { rackLinesNow } from '../utils/rackLines'
-import { rowLabelPlaces, ROW_LABEL_PX } from './RackLineLabels'
+import { rackNumbersNow as rackLinesNow } from '../utils/rackLines'   // (rack-followup 5) every rack's number, the beam lines first
+import { placeRowLabels, ROW_LABEL_PX } from './RackLineLabels'
 import { worldBoundsOf } from './hitTest'
 import { lineNamer } from '../utils/lineNames'
 import { textLz } from '../utils/textSizes'
@@ -114,7 +114,7 @@ export function tagBlocks(objects, gs, { labelSize, rows = false, name } = {}) {
   blocks.push(...aisleLabelBoxes(objects, gs, labelSize, { whole: true }))
   if (rows) {
     const fsR = ROW_LABEL_PX / textLz('row', gs)
-    for (const q of rowLabelPlaces(rackLinesNow(objects, gs), fsR, [], name)) blocks.push({ x: q.x, y: q.y, w: q.w, h: q.h })
+    for (const q of placeRowLabels(rackLinesNow(objects, gs), fsR, [], name, objects, gs)) blocks.push({ x: q.x, y: q.y, w: q.w, h: q.h })
   }
   return blocks
 }

@@ -9,7 +9,7 @@
 // name a line through lineNamer, so they can never disagree.
 
 import { isSection, polygonOf, pointInPolygon, SECTION_COLORS, colorOf } from './sectionAreas'
-import { numberLines } from './rackLines'
+import { rackNumbersNow } from './rackLines'   // (rack-followup 5) the beam lines (numberLines, first) and every other rack after them
 
 export const LINE_NUMBERING = ['continuous', 'section']
 /** The layout's numbering: 'continuous' (default) or 'section'. */
@@ -48,7 +48,7 @@ export function lineSections(objects, T, gridSize = 40) {
   if (lineNumbering(T) !== 'section') return null
   const secs = (objects || []).filter(isSection), polys = secs.map(polygonOf), colors = sectionChipColors(objects)
   const out = new Map()
-  for (const l of numberLines(objects || [], gridSize)) {
+  for (const l of rackNumbersNow(objects || [], gridSize)) {
     // a line is in the section holding its middle (as the BOM files it), else unassigned
     const a = (l.r0 + l.r1) / 2, c = (l.s0 + l.s1) / 2, x = l.vert ? c : a, y = l.vert ? a : c
     const i = polys.findIndex(p => pointInPolygon(p, x, y))
@@ -62,7 +62,7 @@ export function lineNamer(objects, T, gridSize = 40) {
   const secOf = lineSections(objects, T, gridSize)
   if (!secOf) return (no) => 'R' + no
   const order = new Map(), count = new Map()
-  for (const l of numberLines(objects || [], gridSize)) {
+  for (const l of rackNumbersNow(objects || [], gridSize)) {
     const k = secOf.get(l.no)?.id || 'unassigned', n = (count.get(k) || 0) + 1
     count.set(k, n); order.set(l.no, 'R' + n)
   }

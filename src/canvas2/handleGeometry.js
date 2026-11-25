@@ -18,6 +18,8 @@
 import { SELECT_BLUE } from '../theme/tokens'
 import { getObjectBounds, getHandlePositions, HANDLES } from '../utils/canvas'
 import { endHandlePts } from '../render/drawnShapes'
+import { faceWordsReach } from '../render/rackOps'   // (rack-followup 7)
+import { textLz, useTextSizes } from '../utils/textSizes'
 
 /* Handle sizes, in SCREEN px at every zoom (divided by the zoom for world
    units). Drawn small — the handles are chrome, not content — but hit in a
@@ -93,9 +95,24 @@ function toLocal(bounds, rotation, wx, wy) {
 /** The rotate handle's LOCAL (pre-rotation) position — CanvasUI.jsx's own
  *  `rx = bounds.x + bounds.width/2, ry = bounds.y - 70/zoom`. Exported so the
  *  painter and the hit-test can never disagree on where it sits. */
-export function rotateHandlePos(bounds, zoom) {
-  return { x: bounds.x + bounds.width / 2, y: bounds.y - (6 + GRIP_STEM_PX + GRIP_PX / 2) / zoom }
+export function rotateHandlePos(bounds, zoom, obj = null) {
+  return { x: bounds.x + bounds.width / 2, y: bounds.y - topLift(obj) - topPill(obj) - (6 + GRIP_STEM_PX + GRIP_PX / 2) / zoom }
 }
+/** (rack-followup 7) The selected rack's own size label above it (canvas2/DimensionLabels.jsx RackLabels: a lane rack's
+ *  "2L × 5D × 4 · 40 PAL", a cantilever's "48 in spacing" — drawn at the aisle text's real size, lz = textLz('aisle', …,
+ *  11): its centre 14 / lz above the face words, half its pill (11 × 1.5 / lz) above that): how far it reaches up, WORLD
+ *  px — the handle goes past it too. 0 for a rack without one. */
+const TOP_PILL = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow', 'rack_cantilever'])
+export const topPill = (obj) => {
+  if (!obj || !TOP_PILL.has(obj.type)) return 0
+  let sizes
+  try { sizes = useTextSizes.getState().sizes } catch { sizes = undefined }
+  return (14 + (11 * 1.5) / 2) / textLz('aisle', 40, null, sizes, 11)
+}
+/** (rack-followup 7) How far a rack's top face word (ENTRY / LOAD — render/rackOps.js faceWordsReach) reaches above its
+ *  outline, world px: the rotate handle and its stem start past it, at the same fixed screen gap, so the handle never
+ *  covers the word at any zoom. 0 for anything without one. (The app's grid is 40 px a foot — the store's gridSize.) */
+export const topLift = (obj) => (obj ? faceWordsReach(obj, 'top', 40) : 0)
 
 /** getHandlePositions' own pad, screen-constant like everything else here.
  *  CanvasUI.jsx calls getHandlePositions(bounds) with no override, taking
@@ -159,8 +176,8 @@ export function computeHandleLayout(obj, zoom) {
   const hs = HANDLE_PX / 2 / zoom
   let rotateHandle = null
   if (canRotate) {
-    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom)
-    rotateHandle = { rx, ry, lineY: bounds.y - 6 / zoom, r: GRIP_PX / 2 / zoom }
+    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom, obj)
+    rotateHandle = { rx, ry, lineY: bounds.y - topLift(obj) - topPill(obj) - 6 / zoom, r: GRIP_PX / 2 / zoom }
   }
   return { bounds, enabled, positions, hs, canRotate, rotateHandle }
 }
@@ -175,7 +192,7 @@ export function handleHitTest(obj, worldX, worldY, zoom) {
   const hs = HANDLE_HIT_PX / 2 / zoom
 
   if (rotateEnabledFor(obj.type)) {
-    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom)
+    const { x: rx, y: ry } = rotateHandlePos(bounds, zoom, obj)
     const r = GRIP_HIT_PX / 2 / zoom
     if (Math.hypot(local.x - rx, local.y - ry) <= r) return 'rotate'
   }

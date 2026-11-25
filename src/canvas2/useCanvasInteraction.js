@@ -653,7 +653,7 @@ export function useCanvasInteraction({
        until this click places it (utils/placement.js) — a blocked spot
        (red outline) takes the click and does nothing. Pan still works. */
     if (!forcePan && evt.button === 0 && usePlacement.getState().active) {
-      movePlacement(useCanvasStore, world, view.current.zoom)
+      movePlacement(useCanvasStore, world, view.current.zoom, undefined, { noSnap: snapOffKey(evt) })   // (rack-followup 6) Alt: no snap
       commitPlacement(useCanvasStore)
       return
     }
@@ -1033,7 +1033,7 @@ export function useCanvasInteraction({
      disagree. Only runs while nothing else owns the cursor: any active
      gesture (pan/drag/marquee/resize) keeps setting it from its own
      mousemove/mouseup, and held space always means grab. */
-  const onStageMouseMove = () => {
+  const onStageMouseMove = (e) => {
     if (pan.current || objDrag.current || marqueeRef.current || resizeDrag.current || groupRotateDrag.current || fpRotateDrag.current || bayRun.current || colLine.current || sectionPoint.current || shapeEdit.current || crossDrag.current || tunnelDrag.current) { setFlueHover(null, null); clearHoverTarget(); return }
     if (spaceDown.current) { clearHoverTarget(); return }
     const stage = stageRef.current
@@ -1045,7 +1045,7 @@ export function useCanvasInteraction({
 
     // a row being placed follows the mouse
     if (usePlacement.getState().active) {
-      movePlacement(useCanvasStore, world, view.current.zoom)
+      movePlacement(useCanvasStore, world, view.current.zoom, undefined, { noSnap: snapOffKey(e && e.evt) })   // (rack-followup 6) Alt: no snap
       setCursor(usePlacement.getState().active?.blocked ? 'not-allowed' : 'copy')
       return
     }

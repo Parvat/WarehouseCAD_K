@@ -12,8 +12,8 @@ import { useLabelPrefs } from './labelPrefs'
 import { useLiveObjects, useView } from './live'
 import { layerShown } from '../utils/layers'
 import { gridBuilding } from '../utils/columnGrid'
-import { rackLinesNow } from '../utils/rackLines'
-import { rowLabelPlaces, rowLabelFs, rowReach } from './RackLineLabels'
+import { rackNumbersNow as rackLinesNow } from '../utils/rackLines'   // (rack-followup 5) every rack's number, the beam lines first
+import { placeRowLabels, rowLabelFs, rowReach } from './RackLineLabels'
 import { aisleLabelBoxes } from '../render/labelOps'
 import { lineNamer } from '../utils/lineNames'
 import { useViewPrefs } from '../studio/viewPrefs'
@@ -76,7 +76,7 @@ export function ColumnGridAnnot() {
   const places = useMemo(() => {
     if (!grids.length || !rowsShown || !layerShown(layers, 'racking')) return []
     const lines = rackLinesNow(objects, gs)
-    return lines.length ? rowLabelPlaces(lines, rowFs, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
+    return lines.length ? placeRowLabels(lines, rowFs, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs), objects, gs) : []
   }, [grids.length, rowsShown, layers, objects, gs, rowFs, labelSize, T, sizes])
   if (!grids.length) { SPOTS = []; CHAIN = []; LINES = []; return null }
   const spots = []

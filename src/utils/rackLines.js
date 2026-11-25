@@ -115,3 +115,39 @@ export function numberLines(objects, gridSize = 40) {
 
 /** The numbered lines of a layout (what the BOM and the plan's labels read). */
 export const rackLinesNow = (objects, gridSize = 40) => numberLines(objects, gridSize)
+
+/* ── (rack-followup 5) R numbers for every rack ────────────────────────────────────────────────────────────────────────
+   Every rack that is not a beam rack — a drive-in, drive-through, push-back, pallet flow, cantilever or shelving unit —
+   gets a number too, AFTER the beam lines: the beam racks keep R1…Rn exactly as before (they are the BOM's and the
+   Tally's lines — numberLines above, unchanged), then the others are Rn+1, Rn+2 … in the same order (section, building,
+   the up-and-down ones first, across, along). Each is its own "line" (none of these types stands in a line or pairs). A
+   mezzanine is a platform: no number. Nothing is stored — renumbered on every add, delete, duplicate and undo, as the
+   beam lines are. They have no BOM line yet (the BOM reads numberLines only). */
+const NO_NUMBER = new Set(['rack_mezzanine'])
+const isOtherRack = (o) => !!o && typeof o.type === 'string' && o.type.startsWith('rack_') && !BEAM.has(o.type) && !NO_NUMBER.has(o.type) && o.width > 0 && o.height > 0
+const otherCache = new WeakMap()
+/** The racks that are not beam racks, as lines in numbering order (before the numbers): [{ key, ids: [id], ws: 'one',
+ *  vert, r0, r1, s0, s1, band, fpId, other: true }]. */
+export function otherRackLinesOf(objects, gridSize = 40) {
+  if (!Array.isArray(objects)) return []
+  const hit = otherCache.get(objects)
+  if (hit && hit.gridSize === gridSize) return hit.lines
+  const fpOrder = new Map(objects.filter(o => /^fp_/.test(o.type || '')).map((o, i) => [o.id, i]))
+  const polys = objects.filter(isSection).map(polygonOf)
+  const lines = objects.filter(isOtherRack).map(o => {
+    const s = span(o), a = (s.r0 + s.r1) / 2, band = (s.s0 + s.s1) / 2
+    const x = s.vert ? band : a, y = s.vert ? a : band, i = polys.findIndex(q => pointInPolygon(q, x, y))
+    return { key: o.id + ':one', ids: [o.id], ws: 'one', vert: s.vert, r0: s.r0, r1: s.r1, s0: s.s0, s1: s.s1, band, pieces: [{ r0: s.r0, r1: s.r1, ids: [o.id] }],
+      fpId: o.parentId ?? null, fpAt: fpOrder.get(o.parentId) ?? 1e9, secAt: i >= 0 ? i : polys.length, other: true }
+  })
+  lines.sort((a, b) => a.secAt - b.secAt || a.fpAt - b.fpAt || (a.vert === b.vert ? 0 : a.vert ? -1 : 1) || a.band - b.band || a.r0 - b.r0)
+  otherCache.set(objects, { gridSize, lines })
+  return lines
+}
+
+/** Every rack's number as the plan draws it: the beam lines R1…Rn (numberLines — the BOM's), then every other rack
+ *  Rn+1 … (otherRackLinesOf). → [{ ...line, no }]. */
+export function rackNumbersNow(objects, gridSize = 40) {
+  const beam = numberLines(objects, gridSize), n = beam.length
+  return [...beam, ...otherRackLinesOf(objects, gridSize).map((l, i) => ({ ...l, no: n + i + 1 }))]
+}

@@ -14,12 +14,20 @@ import { useMemo } from 'react'
 import { Group, Rect, Text } from 'react-konva'
 import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
-import { rackLinesNow } from '../utils/rackLines'
+import { rackNumbersNow as rackLinesNow } from '../utils/rackLines'   // (rack-followup 5) every rack's number, the beam lines first
 import { layerShown } from '../utils/layers'
 import { useViewPrefs } from '../studio/viewPrefs'
 import { useLabelPrefs } from './labelPrefs'
 import { labelScale } from '../render/labelSize'
-import { aisleLabelBoxes } from '../render/labelOps'
+import { aisleLabelBoxes, aisleLabelOps, clearanceOpsAll, clearanceSolids } from '../render/labelOps'
+import { runColumnCheck, layoutColumns } from '../generate/usableCapacity'
+import { clearanceSource } from './clearanceSource'
+import { floorUnit } from './minText'
+import { faceAisleLabels } from '../generate/faceAisles'
+import { gapShown } from './hitTest'
+import { equipmentResolver } from '../utils/equipment'
+import { rackFootprint, MHE_PROFILES } from '../generate/columnCheck'
+import { getColumnCheckView } from '../generate/columnCheckView'
 import { useLiveObjects } from './live'
 import { MIN_TEXT_PX } from './minText'
 import { useTextSizes, textLz } from '../utils/textSizes'
@@ -68,6 +76,50 @@ export function rowLabelPlaces(lines, fs, avoid = [], name = (n) => 'R' + n) {
   return out
 }
 
+/* (rack-followup 5) The numbers of the racks that are not beam racks (rackNumbersNow — a drive-in … a shelving unit),
+   placed as the mockup draws them (at the start end, beside the rack) in a SECOND pass: the beam lines' labels are placed
+   first, exactly as before (so nothing moves on a layout of beam racks), then these keep clear of them, of the aisle width
+   labels, of the rack-to-wall / rack-to-rack face widths (FaceAisleLabels) and of every rack — sliding along their end,
+   else left out (Rule 8: labels never overlap). */
+function otherAvoid(objects, gs) {
+  const out = []
+  let profile = null
+  try { profile = getColumnCheckView().profile || MHE_PROFILES.reach } catch { profile = MHE_PROFILES.reach }
+  const R = equipmentResolver(objects, profile)
+  const all = R.single ? faceAisleLabels(objects, gs, { profile }) : R.inUse.flatMap(p => faceAisleLabels(objects, gs, { profile: p }).filter(L => R.of(L.rackId).key === p.key))
+  const lz = textLz('aisle', gs)
+  for (const L of all) if (gapShown(L, objects, gs, R.of(L.rackId), false)) for (const o of aisleLabelOps(L, lz)) if (o.op === 'rect') out.push({ x: o.x, y: o.y, w: o.w, h: o.h })
+  // the aisle and cross-aisle width labels whole — their arrows across the gap too, not only their pills
+  out.push(...aisleLabelBoxes(objects, gs, undefined, { whole: true }))
+  for (const o of objects) if (typeof o?.type === 'string' && o.type.startsWith('rack_') && o.width > 0 && o.height > 0) { const f = rackFootprint(o); out.push({ x: f.x, y: f.y, w: f.w, h: f.h }) }
+  // the column clearances (a column in an aisle: its distance to the faces either side — ColumnClearanceLabels, the
+  // warnings drawn always) and the column squares themselves
+  try {
+    let pbs = false
+    try { pbs = !!getColumnCheckView().pickBothSides } catch { /* the default */ }
+    const res = runColumnCheck(objects, { profile, gridSize: gs, pickBothSides: pbs })
+    const src = res ? clearanceSource({ aisleBlocks: res.aisleBlocks, columns: layoutColumns(objects, gs), objects, preview: null, gridSize: gs, profile, pickBothSides: pbs }) : null
+    if (src && src.blocks?.length && src.cols?.length) {
+      const clz = 1 / floorUnit(textLz('clearance', gs))
+      for (const ops of clearanceOpsAll(src.blocks, (a) => src.cols[a.columnIndex], clz, gs, false, [], { warnings: true, solids: clearanceSolids(objects, gs) })) for (const o of (Array.isArray(ops) ? ops : [ops])) {
+        if (o.op === 'rect' || (o.op === 'text' && o.w > 0)) out.push({ x: o.x, y: o.y, w: o.w, h: o.h })
+        // its arrow too (a line across the gap): a number never sits on it
+        else if (Array.isArray(o.points) && o.points.length >= 4) { const xs = o.points.filter((_, i) => i % 2 === 0), ys = o.points.filter((_, i) => i % 2 === 1), t = (o.strokeWidth || 1) * 2; out.push({ x: Math.min(...xs) - t, y: Math.min(...ys) - t, w: Math.max(...xs) - Math.min(...xs) + 2 * t, h: Math.max(...ys) - Math.min(...ys) + 2 * t }) }
+      }
+    }
+  } catch { /* no column check: nothing more to keep clear of */ }
+  for (const c of layoutColumns(objects, gs)) out.push({ x: c.x, y: c.y, w: c.w, h: c.h })
+  return out
+}
+/** rowLabelPlaces for every rack's number: the beam lines first (as ever), then the others clear of them (otherAvoid). */
+export function placeRowLabels(lines, fs, avoid = [], name, objects = [], gs = 40) {
+  const beam = lines.filter(l => !l.other), oth = lines.filter(l => l.other)
+  const p1 = rowLabelPlaces(beam, fs, avoid, name)
+  if (!oth.length) return p1
+  return [...p1, ...rowLabelPlaces(oth, fs, [...avoid, ...otherAvoid(objects, gs), ...p1], name)]
+}
+
+
 /** How far the labels `places` reach past building `fp`'s outline box on each side (world px): { top, right, bottom,
  *  left } — what runs outside a wall (the column chain, the door chain) steps out past them. */
 export function rowReach(fp, places) {
@@ -94,7 +146,7 @@ export function useRowPlaces(on) {
   return useMemo(() => {
     if (!on || !rowsShown || !layerShown(layers, 'racking')) return []
     const lines = rackLinesNow(objects, gs)
-    return lines.length ? rowLabelPlaces(lines, fs, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs)) : []
+    return lines.length ? placeRowLabels(lines, fs, aisleLabelBoxes(objects, gs, labelSize), lineNamer(objects, T, gs), objects, gs) : []
   }, [on, rowsShown, layers, objects, gs, fs, labelSize, T, sizes])
 }
 
@@ -111,7 +163,7 @@ export function RackLineLabels() {
   const lines = useMemo(() => rackLinesNow(objects, gs), [objects, gs])
   const avoid = useMemo(() => (shown && lines.length ? aisleLabelBoxes(objects, gs, labelSize) : []), [shown, lines.length, objects, gs, labelSize, sizes])
   const namer = useMemo(() => lineNamer(objects, T, gs), [objects, T, gs])
-  const places = useMemo(() => rowLabelPlaces(lines, fsL, avoid, namer), [lines, fsL, avoid, namer])
+  const places = useMemo(() => placeRowLabels(lines, fsL, avoid, namer, objects, gs), [lines, fsL, avoid, namer, objects, gs])
   // Per section (row-numbering fixes): each chip filled with its section's colour, the text white or dark to read on it
   const secOf = useMemo(() => lineSections(objects, T, gs), [objects, T, gs])
   // the Tally's tallied lines (studio/tally.js): a small green tick just before the label (every line it names checked)

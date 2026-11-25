@@ -980,8 +980,9 @@ export function FloatingToolbar({ studio = false } = {}) {
     const x  = (item.type==='column_grid'&&parentFp) ? parentFp.x+(parentFp.wallThicknessFt||0.25)*GS : wx-w/2
     const y2 = (item.type==='column_grid'&&parentFp) ? parentFp.y+(parentFp.wallThicknessFt||0.25)*GS : wy-h/2
     /* a single or double row — and a zone — follows the mouse until a click places it
-       (utils/placement.js); everything else is dropped at the view centre */
-    const place = (fields) => (ROW_TYPES.has(item.type) || item.type.startsWith('zone_')
+       (utils/placement.js); everything else is dropped at the view centre. (rack-followup 6) Every rack type follows the
+       mouse too — a drive-in … a mezzanine: a ghost with snap (Alt: none), a click places one, Esc cancels */
+    const place = (fields) => (ROW_TYPES.has(item.type) || item.type.startsWith('zone_') || item.type.startsWith('rack_')
       ? startPlacement(useCanvasStore, [{ id: nanoid(), layerId: layerForType(item.type), strokeWidth: 1.5, opacity: 1, rotation: 0, noFill: false, ...fields }], { at: { x: wx, y: wy }, ...(placeOpts || {}) })
       : addObject(fields))
     place({
@@ -1084,12 +1085,12 @@ export function FloatingToolbar({ studio = false } = {}) {
     : selectItem(item)
 
   /* (rack-design — Rule 9: a double-click on a tool keeps it on) a rack type double-clicked in the library stays on: each
-     click on the plan places one and the next follows the mouse, until Esc (or another tool or placement) ends it. Only
+     click on the plan places one and the next follows the mouse, until Esc (or another tool or placement) ends it. (rack-followup 6: every rack type follows the mouse now, so every one keeps on; was: only
      the types that follow the mouse (a selective, back-to-back or double-deep rack) — the rest drop at the view's centre
      at once, so a double-click places one, as before. */
   const keepRef = useRef(null)
   const keepItem = item => {
-    if (!usePlacement.getState().active || !ROW_TYPES.has(item.type)) return
+    if (!usePlacement.getState().active || !(ROW_TYPES.has(item.type) || item.type.startsWith('rack_'))) return   // (rack-followup 6) every rack type
     keepRef.current = item
     // the placement the first click started ends the keep when it is cancelled (Esc, another tool, another placement)
     const a = usePlacement.getState().active

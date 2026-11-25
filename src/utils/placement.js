@@ -32,6 +32,7 @@ import { useRowGroup } from './rowGroupTool'
 import { getColumnCheckView } from '../generate/columnCheckView'
 import { innerOutline } from './floorGeom'
 import { buildingForBox } from '../generate/fillRacking'
+import { rackIssues } from './bayBeam'
 
 const isZone = (o) => typeof o?.type === 'string' && o.type.startsWith('zone_')
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -61,12 +62,22 @@ export function shifted(o, dx, dy) {
   if (c.fpVerts) c.fpVerts = c.fpVerts.map(v => ({ x: v.x + dx, y: v.y + dy }))
   return c
 }
+/** (rack-followup 6) a rack that is not a row (one that used to drop at the view's centre) */
+const isLoneRack = (o) => !!o && typeof o.type === 'string' && o.type.startsWith('rack_') && !isRow(o)
 const buildingAt = (objects, x, y) => [...objects].reverse().find(f => FP.has(f.type) && x >= f.x && x <= f.x + f.width && y >= f.y && y <= f.y + f.height) || null
 
 /** The snapped move for `items` with their centre at the pointer `world`:
  *  { dx, dy, snapped: { run, cross } (what caught, or null), fpId }. */
-export function snapPlacement(items, objects, world, gridSize = 40, zoom = 1, profile = MHE_PROFILES.reach) {
+export function snapPlacement(items, objects, world, gridSize = 40, zoom = 1, profile = MHE_PROFILES.reach, { noSnap = false } = {}) {
   if (items.length === 1 && isZone(items[0])) return snapZone(items[0], objects, world, gridSize, zoom)
+  /* (rack-followup 6) one rack that is not a row — a drive-in, drive-through, push-back, pallet flow, cantilever, shelving
+     unit or mezzanine, picked in the library: its box onto a wall's inner face or a rack's edge within 12 screen px, kept
+     inside the walls, as a zone is (snapZone); Alt held: none — centred on the pointer. A row's snap is unchanged. */
+  if (items.length === 1 && isLoneRack(items[0])) {
+    if (!noSnap) return snapZone(items[0], objects, world, gridSize, zoom)
+    const o = items[0], fp = buildingAt(objects, world.x, world.y)
+    return { dx: world.x - (o.x + o.width / 2), dy: world.y - (o.y + o.height / 2), snapped: { run: null, cross: null }, fpId: fp ? fp.id : null }
+  }
   const c = centreOf(items)
   let dx = world.x - c.x, dy = world.y - c.y
   const ref = items.find(isRow)
@@ -167,6 +178,13 @@ export function checkPlacement(placed, objects, gridSize = 40, profile = MHE_PRO
     if (g) { crossAisle = true; warnings.add(`In the cross-aisle between sections ${sectionLabel(g.between[0])} and ${sectionLabel(g.between[1])}`) }
     for (const t of softProblems(r, world, rot, gridSize, profile, cols)) warnings.add(t)
   }
+  /* (rack-followup 6) a rack that is not a row: blocked where it overlaps a rack (rackIssues — the rule its red marks use),
+     as a row is; never for being outside a building (these were always placed anywhere). A mezzanine is never blocked. */
+  for (const r of placed.filter(isLoneRack)) {
+    if (blocked) break
+    const iss = rackIssues(r, world, gridSize)
+    if (iss.overlaps.length) blocked = 'overlaps a rack'
+  }
   return { blocked, warnings: [...warnings], crossAisle }
 }
 
@@ -193,14 +211,14 @@ export function startPlacement(store, items, { groups = [], at = null, grab = fa
 }
 
 /** The pointer moved to `world`. */
-export function movePlacement(store, world, zoom = 1, profile) {
+export function movePlacement(store, world, zoom = 1, profile, { noSnap = false } = {}) {
   const a = usePlacement.getState().active
   if (!a) return
   const st = store.getState(), gridSize = st.gridSize || 40
   if (a.abandonIf && a.abandonIf(st)) { usePlacement.setState({ active: null }); return }
   if (a.offset) world = { x: world.x + a.offset.x, y: world.y + a.offset.y }
   const prof = profile || safeProfile()
-  let s = snapPlacement(a.items, st.objects, world, gridSize, zoom, prof)
+  let s = snapPlacement(a.items, st.objects, world, gridSize, zoom, prof, { noSnap })
   const nudge = a.snapTo ? a.snapTo(a.items, st.objects, s.dx, s.dy, zoom, gridSize) : null
   if (nudge) s = { ...s, dx: s.dx + nudge.ddx, dy: s.dy + nudge.ddy, snapped: { ...s.snapped, run: 'its rack' } }
   const placed = placedItems(a.items, st.objects, s.dx, s.dy)
