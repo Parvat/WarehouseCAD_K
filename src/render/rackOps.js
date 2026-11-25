@@ -396,6 +396,28 @@ export function rackCantileverOps(obj, gridSize) {
   return ops
 }
 
+/** (rack-xmarks) The boxes a lost-position X is drawn in, local (unrotated) frame: a shelving run's units (each unit's
+ *  outline), a cantilever's arm bays (between two columns, across the arm reach, each loaded side), any other rack its
+ *  pallet slots (its `slots` ops). Drawing only — the counts read the slots (generate/coverLost.js slotBoxes). */
+export function markBoxes(obj, gridSize = 40) {
+  if (obj?.type === 'rack_shelving') {
+    const { n, uw } = shelvingUnits(obj, gridSize)
+    return Array.from({ length: n }, (_, i) => ({ x: obj.x + i * uw, y: obj.y, w: uw, h: obj.height }))
+  }
+  if (obj?.type === 'rack_cantilever') {
+    const { doubleSided, towers, spineH, spineY, cxs } = cantileverGeom(obj, gridSize)
+    if (cxs.length >= 2) {
+      const reach = Math.max(...cxs.map((_, i) => ((towers[i] || 36) / 12) * gridSize))
+      const bands = [{ y: doubleSided ? spineY - reach : spineY + spineH, h: reach }]
+      if (doubleSided) bands.push({ y: spineY + spineH, h: reach })
+      const out = []
+      for (const b of bands) for (let i = 0; i + 1 < cxs.length; i++) out.push({ x: cxs[i], y: b.y, w: cxs[i + 1] - cxs[i], h: b.h })
+      return out.filter(q => q.w > 0 && q.h > 0)
+    }
+  }
+  return (rackDrawOps(obj, { gridSize }) || []).filter(o => o.op === 'slots').flatMap(o => o.rects)
+}
+
 /** MEZZANINE — a raised floor, not a rack: a dashed outline with a thin cross, its posts along the edges, and its name
  *  and size in the middle. */
 export function rackMezzanineOps(obj, gridSize) {

@@ -10,7 +10,7 @@
 //     sided).
 // A slot's positions: the rack's positions (utils/capacity.js getRackCapacity, its levels) over its slots — the same
 // count the card and the BOM show. Each rack loses at most what it has. Pure.
-import { rackDrawOps, shelvingUnits } from '../render/rackOps'
+import { rackDrawOps, markBoxes } from '../render/rackOps'
 import { overlapMarks } from '../render/overlapOps'
 import { laneFaceGaps } from './laneFaces'
 import { getRackCapacity } from '../utils/capacity'
@@ -25,6 +25,15 @@ const turner = (obj) => {
   if (!a) return (x, y) => [x, y]
   const cx = obj.x + obj.width / 2, cy = obj.y + obj.height / 2, c = Math.cos(a), s = Math.sin(a)
   return (x, y) => [cx + (x - cx) * c - (y - cy) * s, cy + (x - cx) * s + (y - cy) * c]
+}
+/** Local boxes `rects` of rack `r`, as world boxes (turned as it is drawn). */
+function worldBoxes(r, rects) {
+  const T = turner(r), out = []
+  for (const q of rects) {
+    const p = [T(q.x, q.y), T(q.x + q.w, q.y), T(q.x + q.w, q.y + q.h), T(q.x, q.y + q.h)], xs = p.map(v => v[0]), ys = p.map(v => v[1])
+    out.push({ x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) })
+  }
+  return out
 }
 /** A rack's pallet slots, world boxes (its drawing's `slots` ops, turned as it is drawn). */
 export function slotBoxes(r, gridSize = 40) {
@@ -99,10 +108,9 @@ export function faceLostMarks(objects, { gridSize = 40, profile = MHE_PROFILES.r
     if (!isRack(r)) continue
     const dbl = r.type === 'rack_cantilever' && (r.doubleSided ?? true)
     if ((r.type === 'rack_drive_through' || (r.type === 'rack_shelving' && gs[0].nSides === 2)) && gs.length < 2) continue
-    let slots = slotBoxes(r, gridSize)
-    // a shelving unit draws no pallet slots: its units are its positions
-    if (!slots.length && r.type === 'rack_shelving' && !(((r.rotation || 0) % 180 + 180) % 180)) { const { n, uw } = shelvingUnits(r, gridSize); slots = Array.from({ length: n }, (_, i) => ({ x: r.x + i * uw, y: r.y, w: uw, h: r.height })) }
-    else if (!slots.length && r.type === 'rack_shelving') { const fp = rackFootprint(r); slots = [{ x: fp.x, y: fp.y, w: fp.w, h: fp.h }] }
+    // (rack-xmarks) one X per lost position box: a shelving unit, a cantilever arm bay, a pallet slot (markBoxes, turned
+    // as drawn — was: a cantilever's whole reach, a turned shelving run's whole footprint)
+    const slots = worldBoxes(r, markBoxes(r, gridSize))
     if (!slots.length) continue
     marks = marks || overlapMarks(objects, gridSize)
     const mine = marks.filter(m => m.rackId === id)

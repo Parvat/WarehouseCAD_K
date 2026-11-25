@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { rackLinesNow, rackNumbersNow } from '../../utils/rackLines'
 import { checkLayout } from '../../utils/layoutCheck'
 import { cutRack } from '../../utils/zoneCut'
-import { laneGeom, rackDrawOps, shelvingUnits } from '../../render/rackOps'
+import { laneGeom, rackDrawOps, shelvingUnits, markBoxes } from '../../render/rackOps'
 import { faceLostMarks, coverLost } from '../../generate/coverLost'
 import { laneFaceGaps } from '../../generate/laneFaces'
 import { shelvingLabel, unitWidthChange, unitCountChange, depthChange, isStandard, SHELF_UNIT_IN } from '../../utils/shelving'
@@ -109,10 +109,12 @@ describe('rack-round3 4 — a short face: X marks on the lost slots, no line', (
     const c = { id: 'c', type: 'rack_cantilever', x: 0, y: 0, width: 480, height: 253, towers: [36, 36, 36, 36], doubleSided: true, towerWidthIn: 10, spineDepthIn: 4, armThicknessIn: 3, rotation: 0 }
     const wall = { id: 'z', type: 'zone_custom', x: -40, y: 253, width: 600, height: 40 }
     const all = [c, wall]
-    const slots = rackDrawOps(c, { gridSize: GS }).filter(o => o.op === 'slots').flatMap(o => o.rects)
+    // (rack-xmarks) per arm bay: 3 bays a side, 6 in all — was: the drawn reach zones (2)
+    const slots = markBoxes(c, GS)
+    expect(slots.length).toBe(6)
     const marks = faceLostMarks(all, { gridSize: GS })
     expect(marks.length).toBeGreaterThan(0)
-    expect(marks.length).toBeLessThan(slots.length)
+    expect(marks.length).toBe(3)
     expect(marks.every(m => m.y + m.h / 2 > c.y + c.height / 2)).toBe(true)
   })
 })

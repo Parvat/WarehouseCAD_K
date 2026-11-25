@@ -11294,5 +11294,37 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.page.locator('[data-island="right-card"] [data-custom-size]').count()).toBe(1)
       expect((await r3Obj('old-shelf')).width).toBe(400)
     }, 2 * T)
+
+    /* ── rack-xmarks (docs/reports/rack-xmarks.md) ── */
+    onceIt('REG-xmarks (click): (rack-xmarks) a cantilever dragged over half a shelving run — after the drop each covered shelving unit and each covered cantilever arm bay has its own red X (1.5 px), inside that unit or bay, never one X over the whole rack; the PDF draws the same marks; one undo', async () => {
+      await r3Open('walls-racks')
+      const fp = await fpOf()
+      // set up: the shelving run in open floor, a cantilever 10 ft to its right (not touching)
+      const X = fp.x + 2000, Y = fp.y + 1600
+      await L.S('S.setState({ objects: S.getState().objects.map(o => o.id === "w-west" ? { ...o, x: arg.X, y: arg.Y } : o.id === "w-east" ? { ...o, x: arg.X + 330 + 400, y: arg.Y - 150 } : o), selectedIds: [] })', { X, Y })
+      await r2View({ x: X + 500, y: Y }, 0.3)
+      expect(await r2Konva('.rack-overlap')).toEqual([])
+      const c0 = await r3Obj('w-east'), h0 = await r3Hist()
+      const a = await L.toScreen({ x: c0.x + c0.width / 2, y: c0.y + 20 }), b = await L.toScreen({ x: c0.x + c0.width / 2 - 400, y: c0.y + 20 })
+      const up = await r2Drag(a, b); await up()
+      const c1 = await r3Obj('w-east')
+      expect([Math.round(c1.x), (await r3Hist()) - h0]).toEqual([Math.round(X + 330), 1])
+      // the marks: each inside exactly one unit / bay of its rack, two per rack here
+      const res = await L.S('return Promise.all([import("/src/render/overlapOps.js"), import("/src/render/rackOps.js")]).then(([O, K]) => { const st = S.getState(), objs = st.objects; ' +
+        'const m = O.overlapMarks(objs, st.gridSize || 40), by = (id) => K.markBoxes(objs.find(o => o.id === id), st.gridSize || 40); ' +
+        'const own = (q, bs) => bs.filter(b => q.x >= b.x - 1e-6 && q.y >= b.y - 1e-6 && q.x + q.w <= b.x + b.w + 1e-6 && q.y + q.h <= b.y + b.h + 1e-6).length === 1; ' +
+        'return { s: m.filter(q => q.rackId === "w-west").map(q => own(q, by("w-west"))), c: m.filter(q => q.rackId === "w-east").map(q => own(q, by("w-east"))), units: by("w-west").length, bays: by("w-east").length } })')
+      expect(res).toEqual({ s: [true, true], c: [true, true], units: 4, bays: 6 })
+      // drawn: 4 X (8 lines), 1.5 px, each no bigger than a unit or a bay on screen
+      const lines = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const g = st.findOne('.rack-overlap'); return g ? g.find('Line').map(l => { const r = l.getClientRect(); return { w: r.width, h: r.height, sw: l.strokeWidth() * st.scaleX() } }) : [] })
+      expect(lines.length).toBe(8)
+      const z = await L.S('return S.getState().zoom')
+      for (const l of lines) expect([Math.abs(l.sw - 1.5) < 0.2, l.w <= 160 * z + 3, l.h <= 253 * z]).toEqual([true, true, true])
+      // the PDF: the same marks (the overlap red X lines)
+      const pdfX = await L.S('return import("/src/export/pdfExport.js").then(M => { const st = S.getState(), s = M.labelsSVG(st.objects, st.gridSize, { showMarks: true, showAisles: true, labelSize: "M", elevations: st.elevations }); return (s.match(/#C0392B/g) || []).length })')
+      expect(pdfX).toBeGreaterThanOrEqual(8)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      expect(await r2Konva('.rack-overlap')).toEqual([])
+    }, 2 * T)
   })
 })

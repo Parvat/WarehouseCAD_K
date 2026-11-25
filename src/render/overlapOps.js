@@ -8,7 +8,7 @@
 // a layout of beam racks. A mezzanine is a platform: racks under it are allowed (rackIssues never counts it).
 // Pure: ops in world px, drawn by the canvas (canvas2/Overlays.jsx, LabelOps) from the previewed objects — so the marks
 // show while dragging and after the drop, and go the moment the overlap does.
-import { rackDrawOps } from './rackOps'
+import { markBoxes } from './rackOps'
 import { rackIssues } from '../utils/bayBeam'
 import { BEAM_TYPES } from '../utils/rackTypes'
 import { rackFootprint } from '../generate/rackFootprint'
@@ -48,7 +48,9 @@ const meets = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0.
  *  `slots` ops) whose world box meets other's footprint; a rack drawn with no slots — the overlap area itself. */
 export function coveredPositions(r, other, gridSize = 40) {
   const T = turner(r), fo = rackFootprint(other), box = { x: fo.x, y: fo.y, w: fo.w, h: fo.h }
-  const slots = (rackDrawOps(r, { gridSize }) || []).filter(o => o.op === 'slots').flatMap(o => o.rects)
+  // (rack-xmarks) each position's own box: a shelving unit, a cantilever arm bay, a pallet slot (was: the drawn slots —
+  // a cantilever's whole reach, a shelving run none, so one X over the whole overlap)
+  const slots = markBoxes(r, gridSize)
   const out = []
   for (const q of slots) {
     const pts = [T(q.x, q.y), T(q.x + q.w, q.y), T(q.x + q.w, q.y + q.h), T(q.x, q.y + q.h)]
