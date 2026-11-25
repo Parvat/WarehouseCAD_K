@@ -155,3 +155,27 @@ describe('(r4-push-back) push-back on the lane engine', () => {
     expect(b.types[0].lines.find(l => l.part === 'Cart').qty).toBe(2 * 27)
   })
 })
+
+describe('(r5-pallet-flow) pallet flow on the lane engine', () => {
+  it('a new pallet flow: 3 lanes × 4 deep × 3 levels; pitch about 3/8 in per ft; 36 positions', () => {
+    const o = mk('rack_pallet_flow'), s = laneSpec(o, GS)
+    expect([s.lanes, s.deep, s.levels, s.firstIn, s.pitchInPerFt, inch(o.width), inch(o.height)]).toEqual([3, 4, 3, 0, 0.375, 3 * 46 + 4 * 3, 4 * 52])
+    expect(getRackCapacity(o).total).toBe(36)
+  })
+  it('the BOM formulas (L 3, D 4, V 3; frame lines ceil(D / 2) + 1 = 3)', () => {
+    const o = mk('rack_pallet_flow')
+    expect(laneParts(o, 3, GS).map(p => [p.part, p.size, p.qty])).toEqual([
+      ['Upright frame', '15 ft × 17 ft 4 in', 4 * 3],   // P × F
+      ['Beam', '46 in', 3 * 3 * 3],                      // L V F
+      ['Roller track', '17 ft 4 in', 2 * 3 * 3],         // 2 L V, length D × S
+      ['Speed controller', '', 2 * 3 * 3 * 2],           // 2 L V × ceil(D / 2)
+      ['Pallet stop', '', 3 * 3],                        // L V, the PICK end
+      ['Entry guide', '', 2 * 3 * 3],                    // 2 L V, the LOAD end
+    ])
+  })
+  it('the BOM: a Pallet flow racking section under F1, F2', () => {
+    const f = load('lane-flow'), b = computeBom(f.objects, f.elevations, { gridSize: GS })
+    expect(b.types.map(t => [t.name, t.rows.map(r => r.tag)])).toEqual([['Pallet flow racking', ['F1', 'F2']]])
+    expect(b.flags.filter(x => x.key === 'other')).toEqual([])
+  })
+})

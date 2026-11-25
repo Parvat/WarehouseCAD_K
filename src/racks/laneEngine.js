@@ -132,5 +132,5 @@ export function laneResize(o, handle, dx, dy, gridSize = 40) {
 
 /** The types the engine runs today — its card, resize handles, placement defaults and BOM section (R3: drive-in and
  *  drive-through; R4 adds push-back, R5 pallet flow). The others keep their earlier card until their round. */
-export const LANE_ENGINE_ON = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pushback'])   // (r4-push-back) + push-back
+export const LANE_ENGINE_ON = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow'])   // (r4-push-back) + push-back; (r5-pallet-flow) + pallet flow
 export const laneEngineOn = (o) => !!o && LANE_ENGINE_ON.has(o.type)
