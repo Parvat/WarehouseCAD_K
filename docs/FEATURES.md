@@ -108,7 +108,7 @@ Users forgive a plain interface. They won't forgive frustrating drawing. So, in 
 
 | Item | Phase | Status |
 |---|---|---|
-| **All rack types: selective, double-deep, drive-in, drive-thru, push-back, pallet flow, carton flow, cantilever, shelving** — each drawn, filled, generated, elevated, in BOM, Tally, PDF and Check | 1 | Partial — selective (single, back-to-back) end to end; others placeable from the library only; every type drawn by colour family, no fill, slots and face words (rack-design); carton flow a disabled "Coming soon" row |
+| **All rack types: selective, double-deep, drive-in, drive-thru, push-back, pallet flow, carton flow, cantilever, shelving** — each drawn, filled, generated, elevated, in BOM, Tally, PDF and Check | 1 | Partial — selective (single, back-to-back) end to end; others placeable from the library only; every type drawn by colour family, no fill, slots and face words (rack-design); every type numbered (R…), placed by a ghost that follows the mouse, red where it overlaps (rack-fixes, rack-followup); carton flow a disabled "Coming soon" row |
 | Mezzanine | 2 | Partial — placeable library block only |
 | Object library: racks, equipment, structural, safety; frequently used tools and objects pinned | 1 | Partial — library rail + flyout done; the Racking flyout rebuilt: Pallet · Lane · Flow · Other, family glyphs, search, keys, tooltips, double-click keeps on (rack-design); no pinning in the Studio flyout |
 | Custom user objects (save your own, reuse across projects) | 2 | Partial — store actions exist; panel not mounted |
@@ -238,7 +238,7 @@ Details: [Platform plan](#platform-plan-details)
 | Dialog styling, Hub, Sign in | 1 | Partial — dialogs in Studio style; Hub and Sign in still the old skin |
 | Search anything (Rack A12, Door 3, Column C17) | 2 | Todo |
 | Dead-code cleanup | 1 | Partial — _svg_reference, unmounted LeftPanel/index.jsx, WarehouseObjectPicker, CustomObjects remain |
-| Rotate handle over a lane rack's top face word (a selected drive-through or pallet flow: ENTRY / LOAD under the handle) — from rack-design | 1 | Todo |
+| Rotate handle over a lane rack's top face word (a selected drive-through or pallet flow: ENTRY / LOAD under the handle) — from rack-design | 1 | Done — rack-followup (past the word and the size label) |
 | A text dragged on its own moves only down, and less than the mouse (a drag of 120, 80 px at 50 % moved it 0, 142) — seen in rack-fixes, not fixed | 1 | Todo |
 
 ## 15. Separate apps on the same layout file
