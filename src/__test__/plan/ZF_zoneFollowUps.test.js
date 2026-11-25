@@ -77,14 +77,18 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
       const labels = faceAisleLabels(all, GS).filter(L => L.rackId === o.id)
       const marks = narrowAisleBlocks(all, { gridSize: GS }).filter(b => b.rackId === o.id)
       const u = usableCapacity(all, { profile: MHE_PROFILES.reach, gridSize: GS }), u0 = usableCapacity(objs, { profile: MHE_PROFILES.reach, gridSize: GS })
-      if (lvl === 3) { expect([ft, labels, marks, u.usable]).toEqual([ft, [], [], u0.usable]); continue }
+      // (rack-round2 7) what the zone covers (the facing row across the aisle) comes off usable — coverLost; nothing else
+      if (lvl === 3) { expect([ft, labels, marks, u.usable + (u.coverLost - u0.coverLost)]).toEqual([ft, [], [], u0.usable]); continue }
       expect(labels.map(L => [L.level, L.text])).toEqual([[lvl, lvl === 1 ? "7'" : `9' 9"`]])
       // the bays along the washroom (24'), one face: every position on them, off usable
       const bays = new Set(marks.map(b => b.bayIndex))
       expect(marks.every(b => b.faces.length === 1 && b.faces[0] === marks[0].faces[0])).toBe(true)
       expect(bays.size).toBeGreaterThanOrEqual(3)
-      expect(u0.usable - u.usable).toBe(marks.reduce((t, b) => t + b.positionsLost, 0))
-      expect(u.narrowLost).toBe(u0.usable - u.usable + u0.narrowLost)
+      // (rack-round2 7) a zone no longer removes the racks under it: what it covers (here the facing row, across the aisle)
+      // comes off usable too — coverLost
+      const cov = u.coverLost - u0.coverLost
+      expect(u0.usable - u.usable).toBe(marks.reduce((t, b) => t + b.positionsLost, 0) + cov)
+      expect(u.narrowLost).toBe(u0.usable - u.usable - cov + u0.narrowLost)
     }
   })
 
@@ -139,7 +143,7 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
     const { useCanvasStore: St } = await import('../../store/useCanvasStore')
     const { nanoid } = await import('nanoid')
     const AT = await import('../../utils/rackingAreaTool'), PK = await import('../../utils/pairCarryOn'), AK = await import('../../utils/aisleKeeper')
-    AK.installAisleKeeper(St, nanoid); PK.installPairKeeper(St); AT.installAreaKeeper(St)
+    AK.installAisleKeeper(St, nanoid); PK.installPairKeeper(St); AT.installAreaKeeper(St, { autoCut: true })   /* (rack-round2 5) the cut itself */
     const s = () => St.getState()
     // the layout as saved (row 12's pair carrying on as a single), its area gone: racks placed by hand
     const objs0 = REAL_LAYOUT.map(o => ({ ...o })), area = objs0.find(o => o.type === 'racking_area')
@@ -199,7 +203,7 @@ describe.each(ORIENT)('ZF — %s', (_, vert) => {
     const { useCanvasStore: St } = await import('../../store/useCanvasStore')
     const { nanoid } = await import('nanoid')
     const AT = await import('../../utils/rackingAreaTool'), AK = await import('../../utils/aisleKeeper')
-    AK.installAisleKeeper(St, nanoid); AT.installAreaKeeper(St)
+    AK.installAisleKeeper(St, nanoid); AT.installAreaKeeper(St, { autoCut: true })   /* (rack-round2 5) the cut itself */
     const s = () => St.getState()
     const objs0 = REAL_LAYOUT.map(o => ({ ...o })), area = objs0.find(o => o.type === 'racking_area')
     let saved = planAreaResize(objs0, area.id, { x: area.x, y: area.y, w: area.width, h: area.height }, { gridSize: GS })

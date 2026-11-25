@@ -15,6 +15,8 @@ import { getLayoutCapacity } from '../utils/capacity'
 import { checkColumns, expandColumnGrid, MHE_PROFILES } from './columnCheck'
 import { DEFAULT_RULES } from '../rules/defaults'
 import { levelsResolver } from '../utils/elevations'
+import { coverLost } from './coverLost'   // (rack-round2 7)
+import { walkwayInNow } from '../utils/zoneCheck'
 
 const GS = 40
 
@@ -66,7 +68,9 @@ export function usableCapacity(objects, { profile, gridSize = GS, rules = DEFAUL
   const pickZoneLost = res ? (res.pickBlocks || []).filter(counts).reduce((t, c) => t + (c.positionsLost || 0), 0) : 0
   const prof = profile || MHE_PROFILES.reach
   const narrowLost = narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res), elevations }).filter(counts).reduce((t, c) => t + c.positionsLost, 0)
-  return { gross, usable: gross - inRackLost - pickZoneLost - narrowLost, inRackLost, pickZoneLost, narrowLost }
+  // (rack-round2 7) covered by a zone or an overlap with a rack that is not a beam rack, or behind a short face
+  const cover = coverLost(objects, { gridSize, profile: prof, elevations, walkwayIn: walkwayInNow() })
+  return { gross, usable: Math.max(0, gross - inRackLost - pickZoneLost - narrowLost - cover.total), inRackLost, pickZoneLost, narrowLost, coverLost: cover.total }
 }
 
 /** One rack's positions lost to the same three causes as usableCapacity — in-rack columns, blocked pick zones,
@@ -79,6 +83,7 @@ export function rackPositionsLost(rackId, objects, { profile, gridSize = GS, che
   const prof = profile || MHE_PROFILES.reach
   return (res ? sum(res.rackConflicts || []) + sum(res.pickBlocks || []) : 0)
     + sum(narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res), elevations }))
+    + (coverLost(objects, { gridSize, profile: prof, elevations, walkwayIn: walkwayInNow() }).byRack.get(rackId) || 0)   // (rack-round2 7)
 }
 
 /** The positions usableCapacity takes off, one entry per block, with its reason (the layout summary's "Lost to" —
@@ -95,5 +100,7 @@ export function lostPositions(objects, { profile, gridSize = GS, check, ledger, 
   const prof = profile || MHE_PROFILES.reach
   for (const c of narrowAisleBlocks(objects, { profile: prof, gridSize, already: blockedKeys(res), elevations }))
     take(c, c.cause?.kind === 'rack' ? 'narrow' : c.cause?.kind === 'zone' ? 'zone' : 'other')
+  // (rack-round2 7) covered by a zone or an overlap, or behind a short face
+  for (const c of coverLost(objects, { gridSize, profile: prof, elevations, walkwayIn: walkwayInNow() }).list) out.push({ rackId: c.rackId, bayIndex: null, faces: [], n: c.n, reason: c.reason === 'zone' ? 'zone' : c.reason === 'face' ? 'narrow' : 'other' })
   return out
 }

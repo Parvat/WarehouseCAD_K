@@ -34,7 +34,9 @@ import { useTextSizes, textLz } from '../utils/textSizes'
 import { checkedNos } from '../studio/tally'
 import { lineNamer, lineSections, chipText } from '../utils/lineNames'
 import { buildingOutline } from '../utils/floorGeom'
-import { useLabelObjects } from './settled'   // (drag-perf-bar)
+import { pointInPolygon } from '../utils/sectionAreas'
+import { useLabelObjects, useLabelsHeld } from './settled'
+import { useDragPreview } from './dragPreview'   // (drag-perf-bar)
 import { RACK_NUMBER } from '../render/rackFamily'   // (rack-design) the rack numbers' colour
 
 const WORDS = RACK_NUMBER, TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
@@ -111,12 +113,61 @@ function otherAvoid(objects, gs) {
   for (const c of layoutColumns(objects, gs)) out.push({ x: c.x, y: c.y, w: c.w, h: c.h })
   return out
 }
-/** rowLabelPlaces for every rack's number: the beam lines first (as ever), then the others clear of them (otherAvoid). */
+/** (rack-round2 2) The walls (each side of every building as a band its wall's thickness, both faces) and the zones: a
+ *  number of a rack that is not a beam rack never touches or crosses one. */
+function wallsAndZones(objects, gs) {
+  const out = []
+  for (const o of objects) {
+    if (typeof o?.type !== 'string') continue
+    if (o.type.startsWith('zone_') && o.width > 0 && o.height > 0) out.push({ x: o.x, y: o.y, w: o.width, h: o.height })
+    if (!o.type.startsWith('fp_')) continue
+    const P = buildingOutline(o), t = (o.wallThicknessFt || 0.25) * gs
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i], b = P[(i + 1) % P.length]
+      out.push({ x: Math.min(a.x, b.x) - t, y: Math.min(a.y, b.y) - t, w: Math.abs(b.x - a.x) + 2 * t, h: Math.abs(b.y - a.y) + 2 * t })
+    }
+  }
+  return out
+}
+/** (rack-round2 2) The numbers of the racks that are not beam racks: the spot a beam rack's takes first (beside the start
+ *  end, centred — sliding along it), else beside the other end, else above, else below, each the beam labels' gap off
+ *  the rack; a spot that touches a wall, a column, a rack, a zone or another label is not taken (a margin round each);
+ *  inside the building before outside it. No spot: left out (Rule 8). */
+export function otherLabelPlaces(lines, fs, avoid = [], name = (n) => 'R' + n, objects = [], gs = 40) {
+  const h = fs * 1.25, gap = fs * 0.5, m = fs * 0.15, placed = [], out = []
+  const blocks = [...avoid, ...wallsAndZones(objects, gs)]
+  const fps = objects.filter(o => typeof o?.type === 'string' && o.type.startsWith('fp_')).map(o => buildingOutline(o).map(p => [p.x, p.y]))
+  const inside = (b) => fps.some(P => [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].every(([x, y]) => pointInPolygon(P, x, y)))
+  const clear = (b) => { const g = { x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m }; return !placed.some(p => meets(p, g)) && !blocks.some(p => meets(p, g)) }
+  for (const l of lines) {
+    const text = name(l.no), w = text.length * fs * 0.62 + fs * 0.3
+    const c = (l.s0 + l.s1) / 2, half = (l.s1 - l.s0) / 2
+    // the rack's box in world: across a run (s) and along it (r)
+    const X0 = l.vert ? l.s0 : l.r0, X1 = l.vert ? l.s1 : l.r1, Y0 = l.vert ? l.r0 : l.s0, Y1 = l.vert ? l.r1 : l.s1
+    const cands = []
+    const steps = [0]; for (let d = h; d <= half + h / 2; d += h) steps.push(d, -d)
+    // 1. the start end (as a beam rack's), sliding along it
+    for (const d of steps) cands.push(l.vert ? { x: c + d - w / 2, y: l.r0 - gap - h, w, h, align: 'center' } : { x: l.r0 - gap - w, y: c + d - h / 2, w, h, align: 'right' })
+    // 2. the other end
+    for (const d of steps) cands.push(l.vert ? { x: c + d - w / 2, y: l.r1 + gap, w, h, align: 'center' } : { x: l.r1 + gap, y: c + d - h / 2, w, h, align: 'right' })
+    // 3. above, 4. below (centred over the rack)
+    const cx = (X0 + X1) / 2
+    cands.push({ x: cx - w / 2, y: Y0 - gap - h, w, h, align: 'center' }, { x: cx - w / 2, y: Y1 + gap, w, h, align: 'center' })
+    const ok = cands.filter(clear)
+    const at = ok.find(inside) || (ok.length && !fps.some(P => pointInPolygon(P, cx, (Y0 + Y1) / 2)) ? ok[0] : null)
+    if (!at) continue
+    placed.push(at)
+    out.push({ key: l.ids.join(',') + ':' + l.ws, text, nos: [l.no], x: at.x, y: at.y, w: at.w, h: at.h, align: at.align, vert: l.vert, r0: l.r0, s0: l.s0, s1: l.s1 })
+  }
+  return out
+}
+/** rowLabelPlaces for every rack's number: the beam lines first (as ever), then the others clear of them (otherAvoid,
+ *  otherLabelPlaces). */
 export function placeRowLabels(lines, fs, avoid = [], name, objects = [], gs = 40) {
   const beam = lines.filter(l => !l.other), oth = lines.filter(l => l.other)
   const p1 = rowLabelPlaces(beam, fs, avoid, name)
   if (!oth.length) return p1
-  return [...p1, ...rowLabelPlaces(oth, fs, [...avoid, ...otherAvoid(objects, gs), ...p1], name)]
+  return [...p1, ...otherLabelPlaces(oth, fs, [...avoid, ...otherAvoid(objects, gs), ...p1], name, objects, gs)]
 }
 
 
@@ -150,6 +201,12 @@ export function useRowPlaces(on) {
   }, [on, rowsShown, layers, objects, gs, fs, labelSize, T, sizes])
 }
 
+/** (rack-round2 4) Its children moved by the drag's offset, live — the moving rack's own number goes with it. */
+function DragOffset({ children }) {
+  const dx = useDragPreview(st => st.dx), dy = useDragPreview(st => st.dy)
+  return <Group x={dx || 0} y={dy || 0} listening={false}>{children}</Group>
+}
+
 export function RackLineLabels() {
   // where the racks are drawn now — a drag moves them before the store (live.js); (drag-perf-bar) held during a drag that
   // does not carry everything, placed once on the drop (settled.js)
@@ -168,10 +225,17 @@ export function RackLineLabels() {
   const secOf = useMemo(() => lineSections(objects, T, gs), [objects, T, gs])
   // the Tally's tallied lines (studio/tally.js): a small green tick just before the label (every line it names checked)
   const checked = useMemo(() => checkedNos(objects, lines, T), [objects, lines, T])
+  const held = useLabelsHeld(), movingIds = useDragPreview(s => s.ids)
   if (!shown || !lines.length || !layerShown(layers, 'racking')) return null
-  return (
-    <Group name="rack-line-labels" listening={false}>
-      {places.map(p => {
+  /* (rack-round2 4) nothing left behind: while the labels are held for a drag, the number of a rack that moves is not
+     drawn (not at its old place) — it is placed again on the drop. (Riding the drag redrew this whole layer every frame:
+     on a big layout the drag went from 16 to 25 ms a frame — measured, docs/reports/rack-round2.md.) */
+  const moveOf = (p) => {
+    if (!held || !movingIds) return 'still'
+    const ids = p.key.split(':')[0].split(','), n = ids.filter(id => movingIds.has(id)).length
+    return n === 0 ? 'still' : n === ids.length ? 'moving' : 'hidden'
+  }
+  const draw = (list) => list.map(p => {
         const col = secOf ? secOf.get(p.nos[0])?.color : null
         const my = p.y + p.h / 2, w0 = p.w / k0, h0 = p.h / k0
         // a plain label: at its right end (a line across) or its middle
@@ -186,8 +250,13 @@ export function RackLineLabels() {
               fontSize={fs} fontFamily={FONT} fontStyle="600" fill={chipText(col)} listening={false} perfectDrawEnabled={false} />
           </Group>
         )
-      })}
-      {places.filter(p => p.nos.length && p.nos.every(n => checked.has(n))).map(p => {
+      })
+  const still = places.filter(p => moveOf(p) === 'still'), moving = places.filter(p => moveOf(p) === 'moving')
+  return (
+    <Group name="rack-line-labels" listening={false}>
+      {draw(still)}
+      {void moving}
+      {still.filter(p => p.nos.length && p.nos.every(n => checked.has(n))).map(p => {
         const tw = p.text.length * fsL * 0.62, start = p.align === 'right' ? p.x + p.w - tw : p.x + p.w / 2 - tw / 2
         const c = start - fsL * 1.05 + fsL / 2, my = p.y + p.h / 2
         return <Text key={'t' + p.key} name="rack-line-tick" text="✓" x={c - fs / 2} y={my - p.h / k0 / 2} width={fs} height={p.h / k0} align="center" verticalAlign="middle"

@@ -146,6 +146,24 @@ export function zonePreview(objects, zoneId, was, { gridSize = 40 } = {}) {
 
 /** The bar's note for zone `z`: placed / resized / moved / deleted, and the bays (per row) the change removed and
  *  brought back — "Office moved · 13 bays removed · 9 restored". */
+/** (rack-round2 5) Does going from `a` to `b` take away a rack that is not a beam rack (a drive-in under a zone)? */
+const removesRack = (a, b) => { const ids = new Set(b.map(o => o.id)); return a.some(o => isRackObj(o) && !ids.has(o.id) && !(Array.isArray(o.beams) && o.beams.length)) }
+/** (rack-round2 5) "Remove racks" on a zone's selection bar: the racks zone `zoneId` covers taken off — the bays it covers
+ *  (zoneCut.js applyZones: a pair's covered half, a whole rack it covers, as a zone always did), every other zone left as
+ *  it is. One undo. → true when something went. */
+export function removeZoneRacks(store, zoneId) {
+  const st = store.getState(), gs = st.gridSize || 40, zone = st.objects.find(o => o.id === zoneId)
+  if (!zone) return false
+  const others = st.objects.filter(o => isZone(o) && o.id !== zoneId)
+  const solo = st.objects.filter(o => !isZone(o) || o.id === zoneId)
+  const before = solo.filter(o => o.id !== zoneId)
+  const res = applyZones(solo, { gridSize: gs, newId: nanoid, prevZones: before.filter(isZone).map(zb), extraBases: [] })
+  if (!res.changed) return false
+  const next = [...res.objects, ...others]
+  commitAll(store, next, zoneId)
+  useAreaPrompt.setState({ note: zoneNote(zone, zone, removedRowBays(st.objects, next, gs).length) })
+  return true
+}
 export const zoneNote = (z, was, removed, restored = 0, deleted = false) => {
   const how = deleted ? 'deleted' : !was ? 'placed' : (Math.abs(was.width - z.width) > 1e-6 || Math.abs(was.height - z.height) > 1e-6) ? 'resized' : 'moved'
   const n = (k) => `${k} bay${k === 1 ? '' : 's'}`
@@ -159,7 +177,7 @@ export const zoneNote = (z, was, removed, restored = 0, deleted = false) => {
  *      ("Office moved · 13 bays removed · 9 restored");
  *    - a deleted area with its racks asks "Delete the racks in this area too?".
  *  Returns the unsubscribe. */
-export function installAreaKeeper(store) {
+export function installAreaKeeper(store, { autoCut = false } = {}) {
   let lastHistory = store.getState().history, lastIndex = store.getState().historyIndex, lastObjects = store.getState().objects, busy = false
   const geo = (o) => (o ? [o.x, o.y, o.width, o.height].join(',') : '')
   const check = (st) => {
@@ -186,7 +204,16 @@ export function installAreaKeeper(store) {
     const orphaned = new Set(gone.filter(id => st.objects.some(o => o.areaId === id)))
     // does the zone change cut or bring back anything? (zoneCut.js: probed, not committed)
     const zoneChange = moved.length > 0 || dropped.length > 0
-    const probe = zoneChange ? landZones(st.objects, before, { gridSize: gs, newId: () => 'probe' }).changed : false
+    /* (rack-round2 5) a zone placed, moved or resized never removes racks on its own: covered racks show red and the
+       zone's selection bar offers Remove racks / Keep (studio/SelectionBar.jsx ZoneBar, removeZoneRacks). Only a change
+       that removes nothing — bays a zone moved off coming back, as before — is still landed at once. */
+    let probe = false
+    if (zoneChange) {
+      const landed = landZones(st.objects, before, { gridSize: gs, newId: () => 'probe' })
+      /* autoCut (the tests of the cut itself — utils/zoneCut.js applyZones, which Remove racks applies): every zone change
+         landed with its consequences at once, as before rack-round2 */
+      probe = landed.changed && (autoCut || (removedRowBays(st.objects, landed.objects, gs).length === 0 && !removesRack(st.objects, landed.objects)))
+    }
     if (useAreaPrompt.getState().note) useAreaPrompt.setState({ note: null })
     const one = moved.length + dropped.length === 1 ? (moved[0] || dropped[0]) : null
     if (!probe && !orphaned.size) { if (one) useAreaPrompt.setState({ note: zoneNote(one, B.get(one.id), 0, 0, !moved.length) }); return }

@@ -2,7 +2,7 @@
 
 Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
 
-**2026-11-25 run:** rack-fixes (overlap red for every rack, lane arrows, Tab then drag, lighter beam slots) and rack-followup (R numbers on every rack, every library type follows the mouse, the rotate handle) are merged (master e5c7c4c, full suite 4536 / 4536), with the 2026-11-24 overnight rack-design work.
+**2026-11-25 run:** rack-fixes and rack-followup are merged (master e5c7c4c), with the 2026-11-24 overnight rack-design work. **rack-round2** (branch, full suite 4558 / 4558) is done and waiting for PP's hand-check in [MORNING.md](MORNING.md): face aisles for every rack type, rack numbers placed clear and lettered per type (D, T, P, F, C, S, M), moving a rack leaves nothing behind, a zone no longer removes racks on its own (Remove racks / Keep), the text drag checked (it was the resize handle), usable for every type, aisle chips past the end when they do not fit.
 
 **PP's answers to the questions in MORNING.md (2026-11-25):**
 1. **Usable count:** yes. Positions covered by an overlap come off the usable count for every rack type, not only beam
@@ -54,8 +54,7 @@ CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
   - Measure gives distance only (D2).
   - No cloud save, and a refresh starts at the sign-in screen (PL1–PL3).
   - UI: no empty-plan card, rail labels are tooltips only, Hub and Sign in use the old skin, no flyout pinning, dead code left (UI1).
-- **Small bugs (FEATURES.md, Open work):** the pen edge crossing a section; the REG-tally-ticks timeout; a text dragged on its own moves only down (fix next — item 6).
-- **Overlap and usable:** a non-beam rack's positions covered by an overlap are drawn red but not yet taken off usable (PP: they should be, for every type — item 7).
+- **Small bugs (FEATURES.md, Open work):** the pen edge crossing a section; the REG-tally-ticks timeout.
 
 ## Next: the epic order
 

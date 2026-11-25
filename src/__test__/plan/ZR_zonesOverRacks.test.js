@@ -39,7 +39,9 @@ async function fresh() {
   installAisleKeeper(useCanvasStore, nanoid)
   installRowEditKeeper(useCanvasStore)
   RG.installRowGroupWatcher(useCanvasStore, nanoid)
-  AT.installAreaKeeper(useCanvasStore)
+  // (rack-round2 5) a zone no longer removes the racks under it on its own (Remove racks / Keep on its bar): these tests
+  // are of the cut itself — what Remove racks applies — so the keeper lands every zone change at once, as before
+  AT.installAreaKeeper(useCanvasStore, { autoCut: true })
   return { useCanvasStore, FT, FR, RA, AT, FC, TG, LC, rackFootprint }
 }
 

@@ -2,9 +2,12 @@ import { SELECT_BLUE, selectTint } from '../theme/tokens'
 import { Rect, Line, Group } from 'react-konva'
 import { equipmentResolver } from '../utils/equipment'
 import { SelectionOutline } from './shapes'
-import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible } from './DimensionLabels'
+import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible, AisleLabelView } from './DimensionLabels'
+import { laneFaceGaps, laneFaceOps } from '../generate/laneFaces'   // (rack-round2 1)
+import { walkwayInNow } from '../utils/zoneCheck'
+import { usePlacement, placedItems } from '../utils/placement'
 import { useMemo, useRef, memo } from 'react'
-import { aisleLabelBoxes } from '../render/labelOps'
+import { aisleLabelBoxes, chipSolids } from '../render/labelOps'
 import { useColumnCheck } from '../generate/useColumnCheck'
 import { BlockedFaceMarks, firstById } from './BlockedFaceMarks'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
@@ -12,7 +15,8 @@ import { useDragPreview, previewObjects } from './dragPreview'
 import { UprightConflictMarks } from './UprightConflictMarks'
 import { OversizedBayMarks } from './OversizedBayMarks'
 import { LabelOps } from './LabelOps'
-import { overlapMarks, overlapOps } from '../render/overlapOps'   // (rack-fixes 1)
+import { overlapMarks, overlapOps, overlapDragOps } from '../render/overlapOps'   // (rack-fixes 1)
+import { useView } from './live'
 import { aisleLabelLayout, labelBlockersOf as columnRectsOf, aisleGapShown } from './hitTest'   // (d2-labels) columns + drawn objects
 import { useLabelPrefs } from './labelPrefs'
 import { useCanvasStore } from '../store/useCanvasStore'
@@ -72,6 +76,33 @@ const feedsOverlays = (o) => o && ((typeof o.type === 'string' && o.type.startsW
    `part`: drawn in two layers (Canvas2.jsx) with the columns between them — 'marks' (aisle and cross-aisle
    labels, column clearances, X marks, upright flags, oversized bays) under the columns, 'chrome' (selection
    outlines, dimension labels, smart guides, the marquee) over them. Left out: both. */
+/** (rack-round2 4) The overlap marks: while dragging, a red outline (2 px) on both racks; after the drop, an X (1.5 px)
+ *  inside each covered slot. Its own component, so a zoom redraws only it (the widths are screen px). */
+const OverlapMarks = memo(function OverlapMarks({ src: src0, dragging: drag0, gridSize, profile, aisleLz }) {
+  const z = useView().zoom || 1
+  /* (rack-round2 5) a zone being placed (its ghost follows the mouse): the racks it would cover show red as it moves */
+  const placing = usePlacement(st => st.active)
+  const placedZones = useMemo(() => (placing ? placedItems(placing.items, src0, placing.dx, placing.dy).filter(o => typeof o.type === 'string' && o.type.startsWith('zone_')) : null), [placing, src0])
+  const src = useMemo(() => (placedZones && placedZones.length ? [...src0, ...placedZones] : src0), [src0, placedZones])
+  const dragging = drag0 || !!(placedZones && placedZones.length)
+  /* (rack-round2 1) a short face of a rack that is not a beam rack (ENTRY, LOAD, PICK, the arm side, the pick side): red on
+     the face and its aisle chip, as a beam aisle's — live while dragging and after the drop */
+  const faces = useMemo(() => (profile ? laneFaceGaps(src, { gridSize, profile, walkwayIn: walkwayInNow() }) : []), [src, gridSize, profile])
+  const faceOps = useMemo(() => laneFaceOps(faces, 3 / z), [faces, z])
+  const solids = useMemo(() => (faces.length ? chipSolids(src, gridSize) : null), [faces.length, src, gridSize])   // (rack-round2 8)
+  const marks = useMemo(() => (dragging ? null : overlapMarks(src, gridSize)), [src, gridSize, dragging])
+  const moving = useDragPreview(st => st.ids)
+  const placeIds = useMemo(() => (placedZones && placedZones.length ? new Set(placedZones.map(o => o.id)) : null), [placedZones])
+  const ops = useMemo(() => (dragging ? overlapDragOps(src, gridSize, 2 / z, placeIds || moving || null) : overlapOps(marks, 1.5 / z)), [dragging, src, gridSize, marks, z, moving, placeIds])
+  return (
+    <>
+      {ops.length > 0 && <LabelOps ops={ops} name="rack-overlap" fit={false} />}
+      {faceOps.length > 0 && <LabelOps ops={faceOps} name="lane-faces" fit={false} />}
+      {faces.map((g, i) => <AisleLabelView key={g.rackId + ':' + g.side} L={g} name={'lane-face:' + g.rackId + ':' + g.side} lz={aisleLz} solids={solids} />)}
+    </>
+  )
+})
+
 function OverlaysView({
   selectedObjects, gridSize, marquee, objects = [], showAisles = true, activeWall = null, smartGuides = [],
   showMarks = true, aisleBlocks = [], columns = [], rackConflicts = [], pickBlocks = [], uprightHits = [], part = 'all',
@@ -145,7 +176,9 @@ function OverlaysView({
   /* (rack-fixes 1) two racks overlapping where one is not a beam rack (a drive-in on a selective, two flow racks …): a red X
      on each position of either the other covers, from the previewed layout — while dragging and after the drop */
   const overlapSrc = useMemo(() => (marksOn ? previewObjects(liveObjects, { ids: ids0, dx: dx0, dy: dy0 }) : null), [marksOn, liveObjects, ids0, dx0, dy0])
-  const overlapRed = useMemo(() => (overlapSrc ? overlapOps(overlapMarks(overlapSrc, gridSize), lz) : []), [overlapSrc, gridSize, lz])
+  /* (rack-round2 4) while dragging: a red outline on both racks only; after the drop: an X, 1.5 px, inside each covered
+     slot (never bigger than it) */
+  const dragNowMarks = !!ids0
   /* The marks sit on their rack (spin(obj)), so moving the rack and moving the
      group are the same drawing. Aisle labels round a measured gap to a label
      and pick label stations by length, so a shifted layout can, at a float
@@ -157,7 +190,15 @@ function OverlaysView({
   const aisleById = aisleSrc === pObjects ? byId : firstById(aisleSrc)
   // only the aisles whose label is shown: never across a section edge unless a real aisle, never open floor (hitTest.js gapShown)
   const gapR = useMemo(() => equipmentResolver(aisleSrc, mhe), [aisleSrc, mhe])
-  const aisles = useMemo(() => (aislesOn ? aisleSrc.filter(o => o.type === 'aisle' && aisleGapShown(o, aisleSrc, gridSize, gapR.pair(o.row1Id, o.row2Id))) : []), [aislesOn, aisleSrc, gridSize, gapR])
+  /* (rack-round2 4) nothing left behind: while the marks wait for the drop (deferMarks — drawn from the layout as the drag
+     began), what belongs to a rack being moved is not drawn at its old place — its X marks, its flags, its oversized bays,
+     the aisle widths beside it; they come back, measured anew, on the drop */
+  const gone = deferMarks && ids0 ? ids0 : null
+  const notMoving = (id) => !gone || !gone.has(id)
+  // memoised: the drag re-renders this every frame, and a new list would redraw every mark (drag-perf)
+  const xMarksShown = useMemo(() => (gone ? xMarks.filter(c => !gone.has(c.rackId)) : xMarks), [gone, xMarks])
+  const uprightShown = useMemo(() => (gone ? uprightHits.filter(c => !gone.has(c.rackId)) : uprightHits), [gone, uprightHits])
+  const aisles = useMemo(() => (aislesOn ? aisleSrc.filter(o => o.type === 'aisle' && notMoving(o.row1Id) && notMoving(o.row2Id) && aisleGapShown(o, aisleSrc, gridSize, gapR.pair(o.row1Id, o.row2Id))) : []), [aislesOn, aisleSrc, gridSize, gapR, gone])   // eslint-disable-line react-hooks/exhaustive-deps
   // the column squares the aisle labels slide off (hitTest.js aisleLabelStation) — from the same layout as the labels
   const aisleCols = useSteadyColumns(aislesOn ? columnRectsOf(aisleSrc, gridSize) : EMPTY_COLS)
   /* The aisle width labels' boxes exactly where they are drawn (the aisle labels from aisleSrc, riding the
@@ -209,7 +250,7 @@ function OverlaysView({
       </Group>
       {/* one width label per cross-aisle; few, so drawn from the previewed layout every drag frame */}
       {aislesOn && <CrossAisleLabels objects={shifted} lz={aisleLz} gridSize={gridSize} profile={warnProfile} />}
-      {aislesOn && <FaceAisleLabels objects={shifted} lz={aisleLz} gridSize={gridSize} profile={warnProfile} />}
+      {aislesOn && !gone && <FaceAisleLabels objects={shifted} lz={aisleLz} gridSize={gridSize} profile={warnProfile} />}
       {/* the Checks layer: clearance arrows and distances, red "under travel"
           marks and aisle shading, X marks, upright flags, oversized bays */}
       {/* a column in an aisle shows its clear distance on both sides whenever the aisle labels are shown (or
@@ -221,12 +262,12 @@ function OverlaysView({
       {/* (doors-edit fixes) in the marks layer only — it was drawn in both layers, every number twice over itself */}
       {marksPart && showClearances && <ClearanceNumbers aisleBlocks={aisleBlocks} columns={columns} objects={objects} lz={clearLz} gridSize={gridSize} avoid={avoid} selectedObjects={selectedObjects} dragging={dragging} show={showClearances} column={onlyCol} columnShow={colShow} />}
       <Group x={rigid ? dx : 0} y={rigid ? dy : 0} listening={false}>
-      {marksOn && <BlockedFaceMarks rackConflicts={xMarks} objects={pObjects} gridSize={gridSize} lz={lz} />}
-      {marksOn && <UprightConflictMarks uprightHits={uprightHits} objects={pObjects} gridSize={gridSize} lz={lz} />}
-      {marksOn && <OversizedBayMarks objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {marksOn && <BlockedFaceMarks rackConflicts={xMarksShown} objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {marksOn && <UprightConflictMarks uprightHits={uprightShown} objects={pObjects} gridSize={gridSize} lz={lz} />}
+      {marksOn && <OversizedBayMarks objects={pObjects} gridSize={gridSize} lz={lz} skip={gone} />}
       </Group>
       {/* (rack-fixes 1) drawn from the live preview (never deferred, never in the rigid group: already moved) */}
-      {overlapRed.length > 0 && <LabelOps ops={overlapRed} name="rack-overlap" />}
+      {overlapSrc && <OverlapMarks src={overlapSrc} dragging={dragNowMarks} gridSize={gridSize} profile={mhe} aisleLz={aisleLz} />}
       {/* Smart-guide alignment lines, live during a plain object drag —
           CanvasArea's own colours (wall/column snaps purple, object-to-
           object snaps green) and dash, ported. Stroke width is a plain

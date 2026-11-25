@@ -28,6 +28,10 @@ import { useBayLedger } from '../components/RightPanel/useBayLedger'
 import { SPLIT_TOOL } from '../utils/splitTool'
 import { FILL_TOOL, fillWholeSectionLocked } from '../utils/fillTool'
 import { notify } from '../utils/notice'
+import { zoneCoverPairs } from '../render/overlapOps'   // (rack-round2 5)
+import { rackNumbersNow } from '../utils/rackLines'
+import { lineNamer } from '../utils/lineNames'
+import { removeZoneRacks } from '../utils/rackingAreaTool'
 import { DOOR_TOOL, useDoorTool } from '../utils/doorTool'
 import { endTool } from '../utils/toolSwitch'
 import { isPlainTool } from '../utils/homeTool'
@@ -401,6 +405,36 @@ function SectionSelBar({ obj }) {
   )
 }
 
+/** (rack-round2 5) A zone's Keep: the racks it covers stay (red, their covered positions off usable) — the question is not
+ *  asked again until the zone is moved or resized. Per session: { [zoneId]: its box when kept }. */
+export const useZoneKeep = create(() => ({}))
+const zoneGeo = (z) => [z.x, z.y, z.width, z.height].map(v => Math.round(v * 100) / 100).join(',')
+/** The names of the racks zone z covers, as the plan draws them (R2, D1 …), in order. */
+export function zoneCoverNames(objects, z, gridSize = 40, T = null) {
+  const ids = new Set(zoneCoverPairs(objects).filter(([, q]) => q.id === z.id).map(([r]) => r.id))
+  if (!ids.size) return []
+  const nm = lineNamer(objects, T, gridSize), out = []
+  for (const l of rackNumbersNow(objects, gridSize)) if (l.ids.some(id => ids.has(id))) { const n = nm(l.no); if (!out.includes(n)) out.push(n) }
+  return out
+}
+function ZoneCovers({ obj }) {
+  const objects = useCanvasStore(s => s.objects), gridSize = useCanvasStore(s => s.gridSize) || 40, T = useCanvasStore(s => s.elevations)
+  const kept = useZoneKeep(s => s[obj.id])
+  const names = useMemo(() => zoneCoverNames(objects, obj, gridSize, T), [objects, obj, gridSize, T])
+  // a Keep lasts until the zone is moved or resized: then it asks again wherever it lands (back where it was too)
+  const geo = zoneGeo(obj)
+  useLayoutEffect(() => { if (kept && kept !== geo) useZoneKeep.setState({ [obj.id]: undefined }) }, [kept, geo, obj.id])
+  if (!names.length || kept === geo) return null
+  const btn = { height: 28, padding: '0 10px', border: 0, borderRadius: 7, fontSize: 12, flexShrink: 0, cursor: 'pointer' }
+  return (
+    <>
+      <Sep />
+      <span data-zone-covers style={{ padding: '0 6px', fontSize: 12, color: '#F2B8B0', whiteSpace: 'nowrap' }}>Covers {names.join(', ')}</span>
+      <button type="button" style={{ ...btn, background: '#C0392B', color: '#FFFFFF' }} onClick={() => removeZoneRacks(store, obj.id)}>Remove racks</button>
+      <button type="button" style={{ ...btn, background: 'transparent', color: B.text }} onClick={() => useZoneKeep.setState({ [obj.id]: zoneGeo(obj) })}>Keep</button>
+    </>
+  )
+}
 function ZoneBar({ obj }) {
   const locked = useLocked(obj)
   const st = store.getState()
@@ -413,6 +447,7 @@ function ZoneBar({ obj }) {
       <IconBtn name="Lock" label={locked ? 'Unlock' : 'Lock'} title={locked ? 'Unlock (Ctrl+L)' : 'Lock (Ctrl+L)'} active={locked} pressed={locked} onClick={() => toggleLock(store)} />
       <IconBtn name="Duplicate" label="Duplicate" title="Duplicate (Ctrl+D)" onClick={duplicateSelection} />
       <IconBtn name="Delete" label="Delete" title="Delete (Del)" danger onClick={deleteSelection} />
+      <ZoneCovers obj={obj} />
     </>
   )
 }

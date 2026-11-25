@@ -28,8 +28,9 @@ const BEAM_RACK_TYPES = BEAM_TYPES   // the beam racks (utils/rackTypes.js — R
 /* One memoised item per rack: only a rack that changed redraws its marks. */
 /* Drawing size: `lz` is the Label size scale (render/labelSize.js), not the
    view zoom — the marks are a fixed size in feet and scale with the racks. */
-export function OversizedBayMarks({ objects = [], gridSize = 40, lz = 1 }) {
-  const racks = objects.filter(o => BEAM_RACK_TYPES.has(o.type) && Array.isArray(o.beams) && o.beams.length)
+export function OversizedBayMarks({ objects = [], gridSize = 40, lz = 1, skip = null }) {
+  // (rack-round2 4) `skip`: the racks being moved while the marks wait for the drop — not drawn at their old place
+  const racks = objects.filter(o => BEAM_RACK_TYPES.has(o.type) && Array.isArray(o.beams) && o.beams.length && !(skip && skip.has(o.id)))
   if (!racks.length) return null
   return (
     <>

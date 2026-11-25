@@ -35,3 +35,11 @@ export function useLabelObjects() {
   const dx = useDragPreview(s => (follow ? s.dx : 0)), dy = useDragPreview(s => (follow ? s.dy : 0))
   return useMemo(() => (follow ? previewObjects(settled, { ids, dx, dy }) : settled), [follow, settled, ids, dx, dy])
 }
+/** (rack-round2 4) Are the labels' objects held (useLabelObjects: a drag that does not carry everything)? Then a label of
+ *  what is moving must be moved by the drag itself (or not drawn), never left at its old place. */
+export function useLabelsHeld() {
+  const settled = useSettledObjects()
+  const dragging = useDragPreview(s => s.dragging), ids = useDragPreview(s => s.ids)
+  const carriesAll = useMemo(() => !!ids && settled.every(o => !feedsLabels(o) || ids.has(o.id)), [settled, ids])
+  return !!dragging && !carriesAll
+}

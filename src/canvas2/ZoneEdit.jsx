@@ -33,8 +33,11 @@ export function ZoneEditPreview({ gridSize }) {
   const [boxes, setBoxes] = useState([])
   useEffect(() => {
     if (!zoneId) { setBoxes([]); return undefined }
-    const t = setTimeout(() => setBoxes(zonePreview(useCanvasStore.getState().objects, zoneId, was, { gridSize })), 60)
-    return () => clearTimeout(t)
+    /* (rack-round2 5) a zone no longer removes the racks under it on release: the covered racks show red (Overlays.jsx,
+       the overlap marks) and its bar asks — no "removed" preview */
+    void zonePreview
+    setBoxes([])
+    return undefined
   }, [zoneId, was, objects, gridSize])
   if (!zone) return null
   return (

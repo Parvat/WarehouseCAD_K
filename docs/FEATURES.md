@@ -154,7 +154,7 @@ Users forgive a plain interface. They won't forgive frustrating drawing. So, in 
 
 | Item | Phase | Status |
 |---|---|---|
-| Rack count, pallet positions, usable vs lost | 1 | Done — except: positions covered by an overlap come off usable for every rack type (PP 2026-11-25; today beam racks only) — next prompt, item 7 |
+| Rack count, pallet positions, usable vs lost | 1 | Done — positions covered by an overlap, a zone (Keep) or behind a short face come off usable for every rack type (rack-round2 7) |
 | Floor utilisation, storage density, cubic utilisation | 2 | Partial — positions per 1,000 sq ft only |
 | Capacity (total load) | 2 | Todo |
 
@@ -239,7 +239,6 @@ Details: [Platform plan](#platform-plan-details)
 | Search anything (Rack A12, Door 3, Column C17) | 2 | Todo |
 | Dead-code cleanup | 1 | Partial — _svg_reference, unmounted LeftPanel/index.jsx, WarehouseObjectPicker, CustomObjects remain |
 | Rotate handle over a lane rack's top face word (a selected drive-through or pallet flow: ENTRY / LOAD under the handle) — from rack-design | 1 | Done — rack-followup (past the word and the size label) |
-| A text dragged on its own moves only down, and less than the mouse (a drag of 120, 80 px at 50 % moved it 0, 142) — seen in rack-fixes; PP 2026-11-25: fix now — next prompt, item 6 | 1 | Todo |
 
 ## 15. Separate apps on the same layout file
 

@@ -47,7 +47,7 @@ import { getFpVertices, insetPolygon } from '../utils/canvas'
 import { pxToFtIn } from '../utils/units'   // (units) the project's units
 import { expandColumnGrid } from '../generate/columnCheck'
 import { rackDrawOps, PORTED_RACK_TYPES, uprightDrawRects, arrowGeom } from '../render/rackOps'
-import { aisleLabelOps, aisleLabelBoxes, clearanceOpsAll, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps } from '../render/labelOps'
+import { aisleLabelOps, aisleLabelBoxes, clearanceOpsAll, clearanceSolids, blockedFaceOps, uprightOps, oversizedOps, chipSolids } from '../render/labelOps'
 import { labelScale, autoPdfLabelInches, aisleLabelScale } from '../render/labelSize'
 import { sectionLegend } from '../utils/sectionLegend'
 import { columnAnnot, ANNOT } from '../render/columnAnnot'
@@ -60,6 +60,8 @@ import { crossAisleLabels } from '../canvas2/crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { overlapMarks, overlapOps } from '../render/overlapOps'   // (rack-fixes 1)
+import { laneFaceGaps, laneFaceOps } from '../generate/laneFaces'   // (rack-round2 1)
+import { walkwayInNow } from '../utils/zoneCheck'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { textLz, textHeight } from '../utils/textSizes'
 import { buildCheckSheets } from './checkSheet'
@@ -384,7 +386,11 @@ export function labelsSVG(objects, gridSize, opts) {
       for (const c of narrowAisleBlocks(objects, { profile: opts.profile, gridSize, already: blockedKeys(res), elevations: opts.elevations })) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
       for (const o of racks) if ((o.type === 'rack_row' || o.type === 'rack_double_row') && Array.isArray(o.beams) && o.beams.length) ops.push(...oversizedOps(o, gridSize, lz))
       // (rack-fixes 1) two racks overlapping, one not a beam rack: the red X on each covered position, as on screen
-      ops.push(...overlapOps(overlapMarks(objects, gridSize), lz))
+      ops.push(...overlapOps(overlapMarks(objects, gridSize), 1.5 / lz))
+      // (rack-round2 1) a short face of a rack that is not a beam rack: red on it, and its aisle chip, as on screen
+      { const faces = laneFaceGaps(objects, { gridSize, profile: opts.profile || undefined, walkwayIn: walkwayInNow() }), solids = chipSolids(objects, gridSize)
+        ops.push(...laneFaceOps(faces, 3 / lz))
+        for (const g of faces) ops.push(...aisleLabelOps(g, textLz('aisle', gridSize), { solids })) }
     }
   }
   return `<g class="labels">${ops.map(labelOpToSVG).join('')}</g>`

@@ -35,7 +35,9 @@ async function fresh() {
   const L = await import('../../utils/layers')
   const { nanoid } = await import('nanoid')
   L.installLayerKeeper(useCanvasStore); installAisleKeeper(useCanvasStore, nanoid); installRowEditKeeper(useCanvasStore); installPairKeeper(useCanvasStore)
-  AT.installAreaKeeper(useCanvasStore)
+  // (rack-round2 5) a zone no longer removes the racks under it on its own (Remove racks / Keep on its bar): these tests
+  // are of the cut itself — what Remove racks applies — so the keeper lands every zone change at once, as before
+  AT.installAreaKeeper(useCanvasStore, { autoCut: true })
   return { useCanvasStore, RA, AT, ZC, LC, TG, rackFootprint }
 }
 

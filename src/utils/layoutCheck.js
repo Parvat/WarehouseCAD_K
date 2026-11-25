@@ -64,6 +64,7 @@ import { DEFAULT_RULES } from '../rules/defaults'
 import { equipmentResolver } from './equipment'
 import { isDeep, deepOf, reachesDeep } from './deep'   // (r2-double-deep)
 import { rackLinesNow } from './rackLines'
+import { laneFaceGaps } from '../generate/laneFaces'   // (rack-round2 1)
 import { doorClearRects, DOOR_NAMES } from './doorClear'
 import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
 
@@ -224,6 +225,17 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
         highlight: g.spots.map(b => xmark(b, HL.red)),
         text: `${where}: columns block ${g.n} pallet position${g.n === 1 ? '' : 's'}${rows > 1 ? ` on ${rows} rows` : ''}` + (g.wall ? WALL_FIX : '') })
     }
+  }
+
+  /* (rack-round2 1) a face of a rack that is not a beam rack (ENTRY, LOAD, PICK, the arm side, the pick side) with less
+     than its aisle in front — generate/laneFaces.js, the red on the plan */
+  for (const g of laneFaceGaps(objects, { gridSize, profile, walkwayIn })) {
+    const need = g.rack.type === 'rack_shelving' ? (walkwayIn / 12) * gridSize : profile.aisleFt * gridSize
+    const what = g.word ? g.word + ' face' : g.rack.type === 'rack_cantilever' ? 'arm side' : 'pick side'
+    const by = { wall: 'the wall', column: 'a column', rack: 'a rack', zone: 'a zone', door: "a door's clear space" }[g.kind] || 'something'
+    const item = { severity: g.level === 1 ? 'error' : 'warning', kind: 'aisle-face', ids: [g.rack.id], box: union([{ x: g.box.x, y: g.box.y, w: Math.max(g.box.w, 1), h: Math.max(g.box.h, 1) }, foot.get(g.rack.id)]),
+      highlight: [outline(foot.get(g.rack.id), HL.red)], text: `${name(g.rack)}: ${what} has ${len(g.width)} in front (${by}) — needs ${len(need)}` }
+    ;(g.level === 1 ? errors : warnings).push(item)
   }
 
   // ── each rack: overlap, inside a zone, wall, reach, bays, angle ──
@@ -456,7 +468,7 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
 }
 
-const KIND_ORDER = ['aisle-drive', 'cross-aisle', 'no-way-in', 'overlap', 'section-overlap', 'door', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run']
+const KIND_ORDER = ['aisle-drive', 'aisle-face', 'cross-aisle', 'no-way-in', 'overlap', 'section-overlap', 'door', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run']
 function byKind(a, b) { return KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) }
 
 /** (small-bugs) Do polygons A and B overlap — an edge of one crossing an edge of the other, or a point of one strictly

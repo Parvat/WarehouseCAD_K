@@ -54,7 +54,7 @@ const AISLE_LOOK = {
   2: { clr: AISLE_PICK_COLOR, text: '#7a4a06', bg: 'rgba(253,230,138,0.95)', stroke: AISLE_PICK_COLOR, sw: 1 },
   1: { clr: AISLE_DRIVE_COLOR, text: AISLE_DRIVE_COLOR, bg: 'rgba(254,226,226,0.95)', stroke: AISLE_DRIVE_COLOR, sw: 1 },
 }
-export function aisleLabelOps(L, lz) {
+export function aisleLabelOps(L, lz, { solids = null } = {}) {
   const { isHoriz, gapLo, gapHi, labelMid, positions, text } = L
   const look = AISLE_LOOK[L.level] || AISLE_LOOK[3]
   const fs = AISLE_LABEL_FONT_PX / lz, aw = 5 / lz, sw = 1 / lz, clr = look.clr
@@ -76,7 +76,38 @@ export function aisleLabelOps(L, lz) {
     // short leader — laid out once in drawing units, the same at every zoom
     const padX = AISLE_LABEL_PADX_PX / lz, along = isHoriz ? fs * 1.5 : text.length * fs * 0.62 + padX * 2, off = 4 / lz
     let px = lx, py = ly
-    if (along > a2 - a1 + 1e-6) {
+    const fits = !(along > a2 - a1 + 1e-6)
+    if (solids) {
+      /* (rack-round2 8) where the chip goes: centred between the arrow ends when it fits; else just past one end of the
+         aisle on the side with free space — past either arrow end on a short leader, else beyond either end of the
+         aisle along its run — the arrows always spanning the whole aisle. A spot on a rack, a column, a wall, a zone (or
+         another chip: `solids` grows as they are laid out) is not taken. None free: as before (past the far end). */
+      const pw = text.length * fs * 0.62 + padX * 2, ph = fs * 1.5, half = isHoriz ? ph / 2 : pw / 2, runHalf = isHoriz ? pw / 2 : ph / 2
+      const boxAt = (cx, cy) => ({ x: cx - pw / 2, y: cy - ph / 2, w: pw, h: ph })
+      const free = (b) => !solids.some(q => Math.min(b.x + b.w, q.x + q.w) - Math.max(b.x, q.x) > 0.5 && Math.min(b.y + b.h, q.y + q.h) - Math.max(b.y, q.y) > 0.5)
+      const at = (u, v) => (isHoriz ? [u, v] : [v, u])                 // (along the run, across the gap) → world
+      const cands = []
+      if (fits) cands.push({ p: at(pos, labelMid), lead: null })
+      cands.push({ p: at(pos, a2 + off + half), lead: isHoriz ? [lx, a2, lx, a2 + off] : [a2, ly, a2 + off, ly] })
+      cands.push({ p: at(pos, a1 - off - half), lead: isHoriz ? [lx, a1, lx, a1 - off] : [a1, ly, a1 - off, ly] })
+      if (Number.isFinite(L.runLo) && Number.isFinite(L.runLen)) {
+        // beyond either end along the run: in line with the aisle, else just to either side of it (a face on a wall: the
+        // chip beside the rack's end, on the floor)
+        const r0 = L.runLo - off * 3 - runHalf, r1 = L.runLo + L.runLen + off * 3 + runHalf   // clear of the rack's outline at any zoom
+        for (const v of [labelMid, a2 + off + half, a1 - off - half]) {
+          cands.push({ p: at(r0, v), lead: null }, { p: at(r1, v), lead: null })
+        }
+      }
+      const pick = cands.find(c => free(boxAt(c.p[0], c.p[1])))
+      if (pick) {
+        ;[px, py] = pick.p
+        if (pick.lead) out.push({ op: 'line', name: 'aisle-leader', points: pick.lead, stroke: clr, strokeWidth: sw })
+        solids.push(boxAt(px, py))
+        out.push(...pillOps(px, py, text, fs, lz, { color: look.text, bg: look.bg, padX, heightScale: 1.5, rx: 2 / lz, stroke: look.stroke, strokeWidth: look.sw / lz, opacity: 0.95 }))
+        continue
+      }
+    }
+    if (!fits) {
       const c = a2 + off + along / 2
       if (isHoriz) py = c; else px = c
       out.push({ op: 'line', name: 'aisle-leader', points: isHoriz ? [lx, a2, lx, a2 + off] : [a2, ly, a2 + off, ly], stroke: clr, strokeWidth: sw })
@@ -280,6 +311,20 @@ export function clearanceOpsAll(blocks, colOf, lz, gridSize = 40, showLabels = t
   return out
 }
 /** What a clearance number may never sit on: every rack's footprint and every column ({ x, y, w, h }, world px). */
+/** (rack-round2 8) What an aisle chip may never sit on: every rack and column (clearanceSolids), every zone, and each
+ *  building's walls (a band each side, its wall's thickness, on both faces). World px boxes. */
+export function chipSolids(objects, gridSize = 40) {
+  const out = clearanceSolids(objects, gridSize)
+  for (const o of objects || []) {
+    if (typeof o?.type !== 'string') continue
+    if (o.type.startsWith('zone_') && o.width > 0 && o.height > 0) out.push({ x: o.x, y: o.y, w: o.width, h: o.height })
+    if (!o.type.startsWith('fp_')) continue
+    const P = Array.isArray(o.fpVerts) && o.fpVerts.length >= 3 ? o.fpVerts : [{ x: o.x, y: o.y }, { x: o.x + o.width, y: o.y }, { x: o.x + o.width, y: o.y + o.height }, { x: o.x, y: o.y + o.height }]
+    const t = (o.wallThicknessFt || 0.25) * gridSize
+    for (let i = 0; i < P.length; i++) { const a = P[i], b = P[(i + 1) % P.length]; out.push({ x: Math.min(a.x, b.x) - t, y: Math.min(a.y, b.y) - t, w: Math.abs(b.x - a.x) + 2 * t, h: Math.abs(b.y - a.y) + 2 * t }) }
+  }
+  return out
+}
 export function clearanceSolids(objects, gridSize = 40) {
   const out = []
   for (const o of objects || []) {

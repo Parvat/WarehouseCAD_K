@@ -418,7 +418,8 @@ describe('REG — the hand check by real clicks', () => {
     /* ── the selection rule (STUDIO.md §7): rows or bays, never both ── */
     /** Double rows (or `type`) whose click points (half, flue, far, middle) are all on the open canvas now, in plan order. */
     const openRacks = async (type = 'rack_double_row', minBays = 1) => {
-      const list = await L.S('return S.getState().objects.filter(o => o.type === arg.t && o.beams.length >= arg.n).map(o => o.id)', { t: type, n: minBays })
+      // (rack-round2 5) a rack a zone covers stays now (it used to be cut away): not one of these
+      const list = await L.S('const st = S.getState(), zs = st.objects.filter(o => /^zone_/.test(o.type)); return st.objects.filter(o => o.type === arg.t && o.beams.length >= arg.n && !zs.some(z => { const b = H.worldBoundsOf(o, st.objects); return Math.min(b.x + b.width, z.x + z.width) > Math.max(b.x, z.x) && Math.min(b.y + b.height, z.y + z.height) > Math.max(b.y, z.y) })).map(o => o.id)', { t: type, n: minBays })
       const out = []
       for (const id of list) {
         const r = await L.S('return S.getState().objects.find(o => o.id === arg)', id)
@@ -1227,17 +1228,29 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.click(s.x, s.y, { button: 'right' }); await L.page.waitForTimeout(150)
       await L.page.getByRole('menuitem', { name: 'Add zone' }).click(); await L.page.waitForTimeout(80)
       await L.page.getByRole('menuitem', { name: 'Washroom' }).click(); await L.page.waitForTimeout(150)
-      for (const fy of [0.5, 0.3, 0.7, 0.15, 0.85]) for (const fx of [0.5, 0.3, 0.7, 0.15, 0.85]) {
+      /* (rack-round2 5) a zone no longer removes the racks under it: first a spot where it covers no rack (a click on it there
+         is the zone's — on a rack it would be the rack's), else, as before, any spot it is allowed */
+      for (const free of [true, false]) for (const fy of [0.5, 0.3, 0.7, 0.15, 0.85]) for (const fx of [0.5, 0.3, 0.7, 0.15, 0.85]) {
         const q = await L.toScreen({ x: f.x + f.width * fx, y: f.y + f.height * fy })
         await L.page.mouse.move(q.x, q.y, { steps: 2 }); await L.page.waitForTimeout(60)
         // not blocked, and clear of the zones already there (two zones on one spot would be one click)
-        if (await L.S('const a = PL.usePlacement.getState().active; if (!a || a.blocked) return true; const z = a.items[0], ox = (a.dx || 0), oy = (a.dy || 0); return S.getState().objects.some(o => /^zone_/.test(o.type) && Math.min(o.x + o.width, z.x + ox + z.width) > Math.max(o.x, z.x + ox) && Math.min(o.y + o.height, z.y + oy + z.height) > Math.max(o.y, z.y + oy))')) continue
+        if (await L.S('const a = PL.usePlacement.getState().active; if (!a || a.blocked) return true; const z = a.items[0], ox = (a.dx || 0), oy = (a.dy || 0); const hit = (o) => Math.min(o.x + o.width, z.x + ox + z.width) > Math.max(o.x, z.x + ox) && Math.min(o.y + o.height, z.y + oy + z.height) > Math.max(o.y, z.y + oy); return S.getState().objects.some(o => (/^zone_/.test(o.type) || (arg && /^rack_/.test(o.type))) && hit(o))', free)) continue
         await L.page.mouse.click(q.x, q.y); await L.page.waitForTimeout(250)
         const z = await L.S('return S.getState().objects.find(o => /^zone_/.test(o.type) && !arg.includes(o.id)) || null', z0)
-        if (z) { await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); return z }
+        if (z) {
+          // (rack-round2 5) no spot free of racks (a full building): Remove racks on its bar — what a zone did on its own before
+          const covers = L.page.locator('[data-selection-bar] [data-zone-covers]')
+          if (await covers.count()) { await L.page.locator('[data-selection-bar]').getByRole('button', { name: 'Remove racks' }).click(); await L.page.waitForTimeout(300) }
+          await L.page.keyboard.press('Escape'); await L.page.keyboard.press('Escape'); return z
+        }
       }
       throw new Error('no room for a zone')
     }
+    /** (rack-round2 5) A point inside zone `z` that a click gives the zone — not a rack it may cover now. */
+    const zonePt7 = (z) => L.S(`const st = S.getState()
+      for (let fy = 0.5; fy > 0.02; fy -= 0.08) for (const s of [1, -1]) for (let fx = 0.5; fx > 0.02 && fx < 0.98; fx += 0.08 * s) {
+        for (const yy of [fy, 1 - fy]) { const x = arg.x + arg.width * fx, y = arg.y + arg.height * yy; if (H.pickAt(st.objects, st.layers, x, y, st.zoom, st.gridSize).id === arg.id) return { x, y } } }
+      return { x: arg.x + arg.width / 2, y: arg.y + arg.height / 2 }`, z)
     /** A door added as a user would: the building by its bottom wall, Add door, a click on that wall at `fx`, Esc. */
     const addDoor7 = async (fx) => {
       const f = await fpOf(), gs = await gs7(), wt = (f.wallThicknessFt || 0.25) * gs
@@ -1336,7 +1349,7 @@ describe('REG — the hand check by real clicks', () => {
       const z = await addZone7()
       const ids = await openRacks('rack_double_row', 4)
       const r = await obj7(ids[0]), f = await fpOf()
-      const zc = { x: z.x + z.width / 2, y: z.y + z.height / 2 }
+      const zc = await zonePt7(z)
       const kindsOf = async () => [...new Set((await kinds7()).map(t => (/^rack_/.test(t) ? 'rows' : /^zone_/.test(t) ? 'zones' : /^fp_/.test(t) ? 'building' : /^struct_/.test(t) ? 'doors' : t)))]
       await L.click(rackAt(r, -0.3, -0.25)); await L.shiftClick(zc)
       expect((await kindsOf()).sort()).toEqual(['rows', 'zones'])
@@ -1568,10 +1581,11 @@ describe('REG — the hand check by real clicks', () => {
       expect(g1.sx !== g0.sx || g1.x !== g0.x).toBe(true)
     }, T)
 
-    it('REG-7a-zone (click): a click selects a zone; Shift+click adds or removes zones; a drag moves it and removes the racks under it without asking; Delete deletes', async () => {
+    it('REG-7a-zone (click): a click selects a zone; Shift+click adds or removes zones; a drag moves it onto a row — (rack-round2 5, was: removes the racks under it without asking) nothing removed, the bar asks "Covers …", Remove racks cuts the bays under it (one undo step each); Delete deletes', async () => {
       await open()
       const z1 = await addZone7(), z2 = await addZone7()
-      const c = (z) => ({ x: z.x + z.width / 2, y: z.y + z.height / 2 })
+      const pts = new Map([[z1.id, await zonePt7(z1)], [z2.id, await zonePt7(z2)]])
+      const c = (z) => pts.get(z.id) || { x: z.x + z.width / 2, y: z.y + z.height / 2 }
       await L.click(c(z1))
       expect((await levelOf()).ids).toEqual([z1.id])
       await L.shiftClick(c(z2))
@@ -1585,11 +1599,17 @@ describe('REG — the hand check by real clicks', () => {
       const b0 = await bays(), h0 = await hist7()
       await L.drag(c(z1), rackAt(r, 0, 0)); await L.page.waitForTimeout(300)
       const z = await obj7(z1.id)
-      // nothing stands under the zone now (Check layout has no rack in a zone), and the row it landed on was cut; no question
-      const under = await L.S('const st = S.getState(); return LC.checkLayout(st.objects, { gridSize: st.gridSize || 40 }).errors.filter(e => e.kind === "zone").length')
-      const cut = await L.S('const o = S.getState().objects.find(x => x.id === arg.id); return !o || o.beams.length !== arg.n || o.type !== arg.t || S.getState().objects.some(x => x.pieceOf === arg.id || (x.zoneBase && x.zoneBase.id === arg.id))', { id: r.id, n: r.beams.length, t: r.type })
+      // (rack-round2 5) the row it landed on stays — nothing is removed without the button — the zone's bar asks
+      const underNow = () => L.S('const st = S.getState(); return LC.checkLayout(st.objects, { gridSize: st.gridSize || 40 }).errors.filter(e => e.kind === "zone" && e.ids.includes(arg)).length', z1.id)
+      const cutNow = () => L.S('const o = S.getState().objects.find(x => x.id === arg.id); return !o || o.beams.length !== arg.n || o.type !== arg.t || S.getState().objects.some(x => x.pieceOf === arg.id || (x.zoneBase && x.zoneBase.id === arg.id))', { id: r.id, n: r.beams.length, t: r.type })
       void b0
-      expect([z.x !== z1.x || z.y !== z1.y, under, cut, await L.page.locator('[role="alertdialog"]').count(), (await hist7()) - h0]).toEqual([true, 0, true, 0, 1])
+      expect([z.x !== z1.x || z.y !== z1.y, (await underNow()) > 0, await cutNow(), await L.page.locator('[role="alertdialog"]').count(), (await hist7()) - h0]).toEqual([true, true, false, 0, 1])
+      const bar7 = L.page.locator('[data-selection-bar]')
+      expect(await bar7.locator('[data-zone-covers]').innerText()).toMatch(/^Covers /)
+      // Remove racks: the bays under it go (nothing stands under the zone), one more undo step
+      await bar7.getByRole('button', { name: 'Remove racks' }).click(); await L.page.waitForTimeout(400)
+      expect([await underNow(), await cutNow(), (await hist7()) - h0]).toEqual([0, true, 2])
+      { const zz = await obj7(z1.id); await L.click(await zonePt7(zz)); await L.page.waitForTimeout(200) }
       await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(200)
       expect(await obj7(z1.id)).toBe(null)
     }, T)
@@ -9918,7 +9938,10 @@ describe('REG — the hand check by real clicks', () => {
       for (let i = 1; i <= 10; i++) await L.page.mouse.move(p0.x + (p1.x - p0.x) * i / 10, p0.y + (p1.y - p0.y) * i / 10)
       await L.page.waitForTimeout(300)
       expect(await L.S('return import("/src/canvas2/dragPreview.js").then(M => M.useDragPreview.getState().dragging)')).toBe(true)
-      expect(await labels()).toEqual(lab0)
+      // (rack-round2 4 — nothing left behind) held, except the widths beside what is moving: not drawn at its old place
+      const movingAisles = await L.S('return import("/src/canvas2/dragPreview.js").then(M => { const ids = M.useDragPreview.getState().ids; return S.getState().objects.filter(o => o.type === "aisle" && ids && (ids.has(o.row1Id) || ids.has(o.row2Id))).map(o => "aisle:" + o.id) })')
+      expect(movingAisles.length).toBeGreaterThan(0)
+      expect(await labels()).toEqual(lab0.filter(l => !movingAisles.includes(l.split('=')[0])))
       expect(await cardText()).toBe(card0)
       await L.page.mouse.up(); await L.page.keyboard.up('Alt'); await L.page.waitForTimeout(500)
       // dropped: the labels follow, exactly as a fresh load of the same layout draws them
@@ -10721,7 +10744,8 @@ describe('REG — the hand check by real clicks', () => {
       const { ids } = await rf_openFloorWith(rf_others, 0.12)
       const [s1, s2, di, pf, ca, sh, mz] = ids
       const nos = await rf_numbers()
-      expect(nos.nos).toEqual([1, 2, 3, 4, 5, 6])
+      // (rack-round2 3 — was R3–R6, none on the mezzanine) each type its own letter and sequence; the mezzanine M1
+      expect(nos.texts).toEqual(['C1', 'D1', 'F1', 'M1', 'R1', 'R2', 'S1'])
       // (Rule 8) no number over another, over an aisle or face width label, or over a rack
       const clash = await L.page.evaluate(() => {
         const st = window.Konva.stages[0]; st.draw()
@@ -10736,8 +10760,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(clash).toEqual([])
       const byRack = await L.S('return import("/src/utils/rackLines.js").then(R => Object.fromEntries(R.rackNumbersNow(S.getState().objects, 40).flatMap(l => l.ids.map(id => [id, l.no]))))')
       expect([byRack[s1], byRack[s2]].sort()).toEqual([1, 2])
-      expect([di, pf, ca, sh].map(id => byRack[id] > 2)).toEqual([true, true, true, true])
-      expect(byRack[mz]).toBeUndefined()
+      expect([di, pf, ca, sh, mz].map(id => byRack[id] > 2)).toEqual([true, true, true, true, true])
       // the BOM: the beam racks' lines only (R1, R2)
       const bomLines = await L.S('return import("/src/utils/bom.js").then(M => { const st = S.getState(), b = M.buildBom ? M.buildBom(st.objects, st.elevations, st.gridSize || 40) : null; return b ? JSON.stringify(b).match(/"no":\\d+/g) : null })').catch(() => null)
       if (bomLines) expect([...new Set(bomLines)].sort()).toEqual(['"no":1', '"no":2'])
@@ -10746,7 +10769,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.click(cdi); await L.page.waitForTimeout(200)
       expect(await L.S('return S.getState().selectedIds')).toEqual([di])
       await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(350)
-      expect((await rf_numbers()).nos).toEqual([1, 2, 3, 4, 5])
+      expect((await rf_numbers()).texts).toEqual(['C1', 'F1', 'M1', 'R1', 'R2', 'S1'])
       await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(350)
       expect(await rf_numbers()).toEqual(nos)
       // Ctrl+D on the pallet flow: one more, R7 (placed with a click when it follows the mouse); Ctrl+Z: back
@@ -10756,7 +10779,7 @@ describe('REG — the hand check by real clicks', () => {
         const fp = await fpOf(), at = await L.toScreen({ x: fp.x + fp.width / 2 - rfFt(20), y: fp.y + fp.height / 2 + rfFt(25) })
         await L.page.mouse.move(at.x, at.y); await L.page.waitForTimeout(150); await L.page.mouse.click(at.x, at.y); await L.page.waitForTimeout(400)
       }
-      expect((await rf_numbers()).nos).toEqual([1, 2, 3, 4, 5, 6, 7])
+      expect((await rf_numbers()).texts).toEqual(['C1', 'D1', 'F1', 'F2', 'M1', 'R1', 'R2', 'S1'])
       await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(350)
       expect(await rf_numbers()).toEqual(nos)
     }, 2 * T)
@@ -10855,6 +10878,257 @@ describe('REG — the hand check by real clicks', () => {
       expect((await L.S('return S.getState().historyIndex')) - h0).toBe(1)
       await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
       expect(Math.round(await L.S('return S.getState().objects.find(q => q.id === arg).rotation || 0', id))).toBe(0)
+    }, 2 * T)
+
+    /* ── rack-round2 (docs/reports/rack-round2.md) ── */
+    const r2Lanes = async () => { const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, B.fixture('lanes-horizontal')); return L }
+    const r2Konva = (q) => L.page.evaluate((q) => { const st = window.Konva.stages[0]; st.draw(); return st.find(q).filter(n => n.isVisible()).map(n => { const r = n.getClientRect(); return { name: n.name(), text: n.text ? n.text() : null, x: r.x, y: r.y, w: r.width, h: r.height } }) }, q)
+    const r2Meet = (a, b, m = 0.5) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > m && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > m
+    const r2Drag = async (a, b, alt = true) => {
+      if (alt) await L.page.keyboard.down('Alt')
+      await L.page.mouse.move(a.x, a.y); await L.page.mouse.down()
+      for (let k = 1; k <= 10; k++) await L.page.mouse.move(a.x + (b.x - a.x) * k / 10, a.y + (b.y - a.y) * k / 10)
+      return async () => { await L.page.mouse.up(); if (alt) await L.page.keyboard.up('Alt'); await L.page.waitForTimeout(400) }
+    }
+    const r2View = async (c, z) => { await L.S('S.setState({ zoom: arg.z, panX: 560 - arg.c.x * arg.z, panY: 450 - arg.c.y * arg.z, selectedIds: [] })', { c, z }); await L.page.waitForTimeout(350) }
+    const r2Card = async () => { const t = await L.page.locator('[data-island="right-card"]').innerText(); const m = /(\d[\d,]*)\s*positions\s*(\d[\d,]*)\s*usable/.exec(t.replace(/\s+/g, ' ')); return m ? { positions: +m[1].replace(/,/g, ''), usable: +m[2].replace(/,/g, '') } : null }
+
+    onceIt('REG-r2-face-aisle (click): (rack-round2 1) a drive-through with its top ENTRY against the wall shows red on that face and its 0″ chip (Check layout: "… ENTRY face has 0″ in front"); the drive-in facing clear floor shows nothing; dragged until its ENTRY faces the drive-through, the drive-in turns red while dragging and after the drop; the lane sides may touch', async () => {
+      await r2Lanes()
+      const dt = await L.S('return S.getState().objects.find(o => o.id === "dt-wall")'), di = await L.S('return S.getState().objects.find(o => o.id === "di-clear")')
+      await r2View({ x: dt.x + dt.width / 2, y: dt.y + dt.height / 2 }, 0.3)
+      const reds = await r2Konva('.lane-face-short')
+      expect(reds.length).toBe(1)
+      const chips = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find(n => /^lane-face:/.test(n.name())).map(g => g.name()) })
+      expect(chips).toEqual(['lane-face:dt-wall:top'])
+      const check = await L.S('return LC.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40 }).errors.filter(e => e.kind === "aisle-face").map(e => e.text)')
+      expect(check.length).toBe(1); expect(check[0]).toMatch(/ENTRY face has 0/)
+      // the drive-in dragged until its bottom ENTRY is 4 ft above the drive-through's top: red while dragging and after
+      await r2View({ x: (dt.x + di.x) / 2, y: (dt.y + di.y) / 2 }, 0.15)
+      const a = await L.toScreen({ x: di.x + di.width / 2, y: di.y + di.height / 2 })
+      const want = { x: dt.x + dt.width / 2, y: dt.y + dt.height + 160 + di.height / 2 }   // its top 4 ft below the drive-through's bottom
+      const b = await L.toScreen(want)
+      const up = await r2Drag(a, b)
+      const during = await L.page.evaluate(() => window.Konva.stages[0].find('.lane-face-short').length)
+      await up()
+      const after = await L.S('return import("/src/generate/laneFaces.js").then(M => M.laneFaceGaps(S.getState().objects, { gridSize: 40 }).map(g => g.rackId + ":" + g.side).sort())')
+      // the drive-through's bottom ENTRY now faces the drive-in 4 ft away: short, red — on the way and after (the drive-in's
+      // top, a lane end with no face word, may touch)
+      expect([during >= 2, after.includes('dt-wall:bottom'), after.includes('di-clear:top')]).toEqual([true, true, false])
+      // one undo: back where it was, only the wall's red left
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      expect(await L.S('return import("/src/generate/laneFaces.js").then(M => M.laneFaceGaps(S.getState().objects, { gridSize: 40 }).map(g => g.rackId + ":" + g.side))')).toEqual(['dt-wall:top'])
+    }, 2 * T)
+
+    onceIt('REG-r2-letters (click): (rack-round2 3) each type its own letter and sequence — a drive-in D1, a drive-through T1; a pallet flow and a cantilever placed from the library: F1, C1; a second drive-in: D2; Delete on D1 closes it up (the other is D1), Ctrl+Z puts D1, D2 back; the beam racks stay R1… and the BOM has no line for them', async () => {
+      await r2Lanes()
+      const fp = await fpOf()
+      await r2View({ x: fp.x + fp.width / 2, y: fp.y + fp.height / 2 }, 0.1)
+      const texts = async () => (await r2Konva('.rack-line-label')).map(t => t.text).sort()
+      expect(await texts()).toEqual(['D1', 'T1'])
+      const rail = L.page.locator('[data-island="rail"]'), menu = L.page.getByRole('menu', { name: 'Racking library' })
+      const placeAt = async (name, w) => {
+        await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300)
+        await menu.getByRole('menuitem', { name, exact: true }).click(); await L.page.waitForTimeout(400)
+        const q = await L.toScreen(w); await L.page.mouse.move(q.x, q.y); await L.page.waitForTimeout(150); await L.page.mouse.click(q.x, q.y); await L.page.waitForTimeout(400)
+        await L.page.keyboard.press('Escape')
+      }
+      await placeAt('Pallet flow', { x: fp.x + fp.width * 0.3, y: fp.y + fp.height * 0.75 })
+      await placeAt('Cantilever', { x: fp.x + fp.width * 0.55, y: fp.y + fp.height * 0.8 })
+      await placeAt('Drive-in', { x: fp.x + fp.width * 0.8, y: fp.y + fp.height * 0.75 })
+      expect(await texts()).toEqual(['C1', 'D1', 'D2', 'F1', 'T1'])
+      // Delete the first drive-in: the other becomes D1
+      const di = await L.S('return S.getState().objects.find(o => o.id === "di-clear")')
+      await L.click({ x: di.x + di.width * 0.3, y: di.y + di.height / 2 }); await L.page.waitForTimeout(200)
+      expect(await L.S('return S.getState().selectedIds')).toEqual(['di-clear'])
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(400)
+      expect(await texts()).toEqual(['C1', 'D1', 'F1', 'T1'])
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      expect(await texts()).toEqual(['C1', 'D1', 'D2', 'F1', 'T1'])
+      // the BOM: no line for these types
+      expect(await L.S('return import("/src/utils/rackLines.js").then(R => R.rackLinesNow(S.getState().objects, 40).length)')).toBe(0)
+    }, 2 * T)
+
+    it('REG-r2-number-spot (click): (rack-round2 2) at 10, 30 and 100 % a drive-in\'s and a pallet flow\'s numbers placed beside the racks never touch a wall, a column, a rack, a zone or another label; the beam racks\' numbers are where they were (the beam lines\' own placement)', async () => {
+      await open()
+      const fp = await fpOf()
+      // beam labels before anything is added
+      const beamBefore = await L.S('return import("/src/canvas2/RackLineLabels.jsx").then(M => import("/src/utils/rackLines.js").then(R => Object.fromEntries(M.rowLabelPlaces(R.rackLinesNow(S.getState().objects, 40), 10).map(p => [p.key, Math.round(p.x) + "," + Math.round(p.y)]))))')
+      // a drive-in and a pallet flow on the plan, placed from the library where there is room (the ghost not blocked)
+      const rail = L.page.locator('[data-island="rail"]'), menu = L.page.getByRole('menu', { name: 'Racking library' })
+      await r2View({ x: fp.x + fp.width / 2, y: fp.y + fp.height / 2 }, 0.1)
+      for (const name of ['Drive-in', 'Pallet flow']) {
+        await rail.getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(300)
+        await menu.getByRole('menuitem', { name, exact: true }).click(); await L.page.waitForTimeout(400)
+        let done = false
+        for (let y = 200; y <= 760 && !done; y += 30) for (let x = 200; x <= 1000 && !done; x += 30) {
+          await L.page.mouse.move(x, y)
+          if (await L.S('const a = PL.usePlacement.getState().active; return !!a && !a.blocked')) { await L.page.mouse.click(x, y); await L.page.waitForTimeout(350); done = true }
+        }
+        if (!done) await L.page.keyboard.press('Escape')
+      }
+      for (const z of [0.1, 0.3, 1]) {
+        const lanes = await L.S('return S.getState().objects.filter(o => o.type === "rack_drive_in" || o.type === "rack_pallet_flow")')
+        if (!lanes.length) break
+        await r2View({ x: lanes[0].x + lanes[0].width / 2, y: lanes[0].y + lanes[0].height / 2 }, z)
+        // the walls, columns, racks and zones (labelOps chipSolids — world) on screen; every other label as drawn
+        const solids = await L.S('return import("/src/render/labelOps.js").then(M => { const st = S.getState(), z = st.zoom; return M.chipSolids(st.objects, 40).map(b => ({ x: b.x * z + st.panX, y: b.y * z + st.panY, width: b.w * z, height: b.h * z })) })')
+        const bad = await L.page.evaluate((solids) => {
+          const st = window.Konva.stages[0]; st.draw()
+          const R = (n) => n.getClientRect(), meet = (a, b) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 0.5 && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 0.5
+          const mine = st.find('.rack-line-label').filter(t => t.isVisible() && /^[DF]d+$/.test(t.text())).map(t => { const c = R(t), w = t.text().length * t.fontSize() * 0.62 * st.scaleX(); return { t: t.text(), r: { x: t.align() === 'right' ? c.x + c.width - w : c.x + c.width / 2 - w / 2, y: c.y, width: w, height: c.height } } })
+          const others = [...st.find('.rack-line-label').filter(t => t.isVisible() && !/^[DF]d+$/.test(t.text())).map(R), ...st.find('.label-pill').filter(n => n.isVisible()).map(R)]
+          return mine.flatMap(a => [...others.filter(o => meet(a.r, o)).map(() => a.t + '/label'), ...solids.filter(o => meet(a.r, o)).map(o => a.t + '/solid')])
+        }, solids)
+        expect([z, bad]).toEqual([z, []])
+      }
+      const beamAfter = await L.S('return import("/src/canvas2/RackLineLabels.jsx").then(M => import("/src/utils/rackLines.js").then(R => Object.fromEntries(M.rowLabelPlaces(R.rackLinesNow(S.getState().objects, 40), 10).map(p => [p.key, Math.round(p.x) + "," + Math.round(p.y)]))))')
+      // every beam line still there as it was (the same racks) has its label where it was — a rack dropped in a cross-aisle
+      // splits the line across it (rackLines.js acrossGap: as before this round), whose labels are new
+      const kb = Object.keys(beamBefore).sort(), ka = Object.keys(beamAfter).sort()
+      if (JSON.stringify(kb) === JSON.stringify(ka)) expect(ka.filter(k => beamAfter[k] !== beamBefore[k])).toEqual([])
+      // (lines split by a rack dropped in a cross-aisle: their neighbours' labels may step aside for the new ones — the
+      // beam placement itself, unchanged; asked in the report)
+    }, 2 * T)
+
+    onceIt('REG-r2-move (click): (rack-round2 4) a drive-in dragged onto a selective — only the rack itself moves (one drawing of it, nothing left behind: no number at its old place), a red outline on both racks while dragging, no X; after the drop an X, 1.5 px, inside each covered slot, never bigger than the slot; one undo', async () => {
+      const { ids: [sel, other] } = await rf_openFloorWith(fp => [rf_selective(fp), rf_laneRack('rack_drive_in', fp, -rfFt(20), -rfFt(6))], 0.5)
+      const a = await L.toScreen(await rf_centreOf(other)), b = await L.toScreen(await rf_centreOf(sel))
+      const numberAt0 = (await r2Konva('.rack-line-label')).filter(t => /^D/.test(t.text))[0]
+      const up = await r2Drag(a, b)
+      await L.page.waitForTimeout(200)
+      const mid = await L.page.evaluate((id) => {
+        const st = window.Konva.stages[0]; st.draw()
+        const bodies = st.find(n => n.name() === 'obj:' + id).filter(n => n.isVisible()).length
+        const g = st.findOne('.rack-overlap')
+        const lines = g ? g.find('Line').map(l => l.points().length) : []
+        return { bodies, lines }
+      }, other)
+      const numbersMid = (await r2Konva('.rack-line-label')).filter(t => /^D/.test(t.text))
+      await up()
+      expect(mid.bodies).toBe(1)
+      expect(mid.lines.length).toBe(2)                                  // two outlines (closed: 10 points each), no X
+      expect(mid.lines.every(n => n === 10)).toBe(true)
+      expect(numbersMid.every(t => !(Math.abs(t.x - numberAt0.x) < 1 && Math.abs(t.y - numberAt0.y) < 1))).toBe(true)
+      // after the drop: X marks, each inside a slot of its rack
+      const xs = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const g = st.findOne('.rack-overlap'); return g ? g.find('Line').map(l => ({ p: l.points(), sw: l.strokeWidth() * st.scaleX() })) : [] })
+      expect(xs.length).toBeGreaterThan(0)
+      expect(xs.every(l => Math.abs(l.sw - 1.5) < 0.01 && l.p.length === 4)).toBe(true)
+      const slots = await L.S('return import("/src/generate/coverLost.js").then(M => { const st = S.getState(); return st.objects.filter(o => o.id === arg[0] || o.id === arg[1]).flatMap(o => M.slotBoxes(o, 40)) })', [sel, other])
+      const inside = (p) => slots.some(s => Math.min(p[0], p[2]) >= s.x - 0.01 && Math.max(p[0], p[2]) <= s.x + s.w + 0.01 && Math.min(p[1], p[3]) >= s.y - 0.01 && Math.max(p[1], p[3]) <= s.y + s.h + 0.01)
+      expect(xs.every(l => inside(l.p))).toBe(true)
+    }, 2 * T)
+
+    onceIt('REG-r2-zone (click): (rack-round2 5) an office dragged over a selective removes nothing — the rack shows red while dragging; after the drop the zone\'s bar reads "Covers R1" with Remove racks and Keep; Keep: the rack stays, red, its covered positions off usable, the bar quiet; dragged off: no red; back over it and Remove racks: the covered bays go, one undo puts them back', async () => {
+      const { ids: [sel, zone] } = await rf_openFloorWith(fp => [rf_selective(fp, 0, 0), { type: 'zone_office', label: 'Office', x: fp.x + fp.width / 2 - rfFt(30), y: fp.y + fp.height / 2 - rfFt(2), width: rfFt(8), height: rfFt(8), layerId: 'zones' }], 0.5)
+      const racks = () => L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.id + ":" + (o.beams || []).length).join(" ")')
+      const r0 = await racks(), u0 = (await r2Card())
+      const zc = await L.toScreen(await rf_centreOf(zone)), sc = await L.toScreen(await rf_centreOf(sel))
+      await L.page.mouse.click(zc.x, zc.y); await L.page.waitForTimeout(200)
+      expect(await L.S('return S.getState().selectedIds')).toEqual([zone])
+      let up = await r2Drag(zc, { x: sc.x - 40, y: sc.y })
+      const during = await L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.rack-overlap'); return g ? g.find('Line').length : 0 })
+      await up()
+      expect([during > 0, await racks()]).toEqual([true, r0])
+      const bar = L.page.locator('[data-selection-bar]')
+      expect(await bar.locator('[data-zone-covers]').innerText()).toBe('Covers R1')
+      // Keep: the rack stays, red, its covered positions off usable; the bar quiet
+      await bar.getByRole('button', { name: 'Keep' }).click(); await L.page.waitForTimeout(300)
+      expect([await bar.locator('[data-zone-covers]').count(), await racks()]).toEqual([0, r0])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      const u1 = await r2Card()
+      expect(u1.usable).toBeLessThan(u0.usable)
+      expect(await L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.rack-overlap'); return g ? g.find('Line').length : 0 })).toBeGreaterThan(0)
+      // dragged off: no red (grabbed by its top strip, off the rack — a click where it covers the rack takes the rack)
+      const zTop = async () => { const o = await L.S('return S.getState().objects.find(q => q.id === arg)', zone); return L.toScreen({ x: o.x + o.width / 2, y: o.y + rfFt(0.6) }) }
+      const zc2 = await zTop()
+      await L.page.mouse.click(zc2.x, zc2.y); await L.page.waitForTimeout(200)
+      up = await r2Drag(zc2, { x: zc2.x, y: zc2.y + 120 }); await up()
+      expect(await L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.rack-overlap'); return g ? g.find('Line').length : 0 })).toBe(0)
+      // back over it: Remove racks takes the covered bays, one undo brings them back
+      const zc3 = await zTop()
+      up = await r2Drag(zc3, { x: zc3.x, y: zc3.y - 120 }); await up()
+      expect(await bar.locator('[data-zone-covers]').innerText()).toBe('Covers R1')
+      await bar.getByRole('button', { name: 'Remove racks' }).click(); await L.page.waitForTimeout(500)
+      expect(await racks()).not.toBe(r0)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(500)
+      expect(await racks()).toBe(r0)
+    }, 2 * T)
+
+    basicsIt('REG-basics-text-drag (click): (rack-round2 6) a free text dragged up, down, left and right by a known distance lands exactly there (Alt: no snap), one undo each; a zone dragged by its name, a section by its name and a column line by its bubble move exactly as far; row numbers, door badges and dimension text are not dragged on their own (n/a — written in the report)', async () => {
+      await open()
+      const fp = await fpOf(), cx = fp.x + fp.width / 2, cy = fp.y + fp.height / 2
+      await L.S(`const st = S.getState(); S.setState({ objects: [...st.objects.filter(o => !/^rack_|^aisle$|^section_area$|^racking_area$/.test(o.type)), { id: 'tx', type: 'text', x: arg.cx - 80, y: arg.cy, text: 'Move me', fontSize: 40, layerId: 'notes', opacity: 1, rotation: 0, strokeWidth: 1.5 }], selectedIds: [] }); S.getState().commitObjectUpdate('tx', {})`, { cx, cy })
+      await r2View({ x: cx, y: cy }, 0.5)
+      const pos = () => L.S('const o = S.getState().objects.find(q => q.id === "tx"); return { x: Math.round(o.x * 100) / 100, y: Math.round(o.y * 100) / 100 }')
+      for (const [dx, dy] of [[0, -60], [0, 60], [-100, 0], [100, 0]]) {
+        // pressed in the middle of the text as drawn (never on a resize handle)
+        const b = await L.S('return import("/src/utils/canvas.js").then(M => M.getObjectBounds(S.getState().objects.find(q => q.id === "tx")))')
+        const s = await L.toScreen({ x: b.x + b.width / 2, y: b.y + b.height / 2 })
+        const p0 = await pos(), h0 = await L.S('return S.getState().historyIndex')
+        const up = await r2Drag(s, { x: s.x + dx, y: s.y + dy }); await up()
+        const p1 = await pos()
+        expect([dx, dy, Math.round((p1.x - p0.x) * 0.5), Math.round((p1.y - p0.y) * 0.5), (await L.S('return S.getState().historyIndex')) - h0]).toEqual([dx, dy, dx, dy, 1])
+      }
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(250)
+      // one undo: the last move (right, 100 px = 200) taken back — the text 200 left of where it started
+      expect(Math.round((await pos()).x - (cx - 80))).toBe(-200)
+      // a zone by its name: the zone moves exactly as far
+      await L.S(`const st = S.getState(); S.setState({ objects: [...st.objects, { id: 'zn', type: 'zone_office', label: 'Office', x: arg.cx + 200, y: arg.cy - 160, width: 320, height: 320, layerId: 'zones', opacity: 1, rotation: 0, strokeWidth: 1.5, parentId: arg.fp }], selectedIds: [] }); S.getState().commitObjectUpdate('zn', {})`, { cx, cy, fp: fp.id })
+      await L.page.waitForTimeout(300)
+      const name = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const t = st.find('Text').find(q => q.isVisible() && q.text() === 'Office'); if (!t) return null; const r = t.getClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })
+      if (name) {
+        const cv = await L.page.locator('#canvas2-container').boundingBox(), s = { x: cv.x + name.x + name.w / 2, y: cv.y + name.y + name.h / 2 }
+        const z0 = await L.S('const o = S.getState().objects.find(q => q.id === "zn"); return { x: o.x, y: o.y }')
+        await L.page.mouse.click(s.x, s.y); await L.page.waitForTimeout(200)
+        const up = await r2Drag(s, { x: s.x + 60, y: s.y - 40 }); await up()
+        const z1 = await L.S('const o = S.getState().objects.find(q => q.id === "zn"); return { x: o.x, y: o.y }')
+        expect([Math.round((z1.x - z0.x) * 0.5), Math.round((z1.y - z0.y) * 0.5)]).toEqual([60, -40])
+      }
+    }, 4 * T)
+
+    it('REG-r2-usable (click): (rack-round2 7) the card\'s usable drops by a non-beam rack\'s covered positions when a drive-in is dragged onto a selective, and by a drive-in\'s positions when its ENTRY is dragged against the wall; positions (gross) and the BOM unchanged; one undo restores the figure', async () => {
+      const { fp, ids: [sel, di] } = await rf_openFloorWith(fp => [rf_selective(fp), rf_laneRack('rack_drive_in', fp, -rfFt(20), -rfFt(6))], 0.5)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      const c0 = await r2Card()
+      const bom0 = await L.S('return import("/src/utils/rackLines.js").then(R => R.rackLinesNow(S.getState().objects, 40).length)')
+      const a = await L.toScreen(await rf_centreOf(di)), b = await L.toScreen(await rf_centreOf(sel))
+      const up = await r2Drag(a, b); await up()
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(250)
+      const c1 = await r2Card()
+      expect([c1.positions, c1.usable < c0.usable]).toEqual([c0.positions, true])
+      expect(await L.S('return import("/src/utils/rackLines.js").then(R => R.rackLinesNow(S.getState().objects, 40).length)')).toBe(bom0)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(350)
+      expect(await r2Card()).toEqual(c0)
+    }, 2 * T)
+
+    it('REG-r2-chips (click): (rack-round2 8) at 15, 30 and 100 % no aisle chip (rack-to-rack, face, cross-aisle, the new face chips) overlaps a rack, a column, a zone, a rack number or another chip; on the lanes fixture the drive-through\'s 0″ chip sits just past the end of its face, inside the building', async () => {
+      await open()
+      const fp = await fpOf()
+      const scan = async () => { const racksS = await L.S('const st = S.getState(), z = st.zoom; return st.objects.filter(o => /^rack_/.test(o.type)).map(o => { const b = H.worldBoundsOf(o, st.objects); return { x: b.x * z + st.panX, y: b.y * z + st.panY, width: b.width * z, height: b.height * z } })'); return L.page.evaluate((racks) => {
+        const st = window.Konva.stages[0]; st.draw()
+        const R = (n) => n.getClientRect(), meet = (a, b) => Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x) > 1 && Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y) > 1
+        const chips = st.find(n => /^(aisle:|face-aisle:|cross-aisle:|lane-face:)/.test(n.name())).flatMap(g => g.find('.label-pill').filter(q => q.isVisible()).map(q => ({ g: g.name(), r: R(q) })))
+        const nums = st.find('.rack-line-label').filter(t => t.isVisible()).map(R)
+        const out = []
+        chips.forEach((c, i) => {
+          chips.forEach((d, j) => { if (j > i && meet(c.r, d.r)) out.push(c.g + '/chip') })
+          if (nums.some(n => meet(c.r, n))) out.push(c.g + '/number')
+          if (/^lane-face:/.test(c.g) && racks.some(n => meet(c.r, n))) out.push(c.g + '/rack')
+        })
+        return out
+      }, racksS) }
+      for (const z of [0.15, 0.3, 1]) { await r2View({ x: fp.x + fp.width / 2, y: fp.y + fp.height / 2 }, z); expect([z, await scan()]).toEqual([z, []]) }
+      await r2Lanes()
+      const dt = await L.S('return S.getState().objects.find(o => o.id === "dt-wall")')
+      for (const z of [0.15, 0.3, 1]) {
+        await r2View({ x: dt.x + dt.width / 2, y: dt.y + dt.height / 2 }, z)
+        expect([z, await scan()]).toEqual([z, []])
+        const chip = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const g = st.findOne(n => n.name() === 'lane-face:dt-wall:top'); const p = g && g.findOne('.label-pill'); if (!p || !p.isVisible()) return null; const r = p.getClientRect(); return { x: r.x, y: r.y, w: r.width, h: r.height } })
+        const rk = await L.S('const st = S.getState(); return { x0: arg.x * st.zoom + st.panX, x1: (arg.x + arg.width) * st.zoom + st.panX, y0: arg.y * st.zoom + st.panY }', dt)
+        if (!chip) continue   // under its reading size at this zoom (Rule 8)
+        expect([z, chip.x + chip.w <= rk.x0 + 1 || chip.x >= rk.x1 - 1, chip.y + 1 >= rk.y0]).toEqual([z, true, true])
+      }
     }, 2 * T)
   })
 })

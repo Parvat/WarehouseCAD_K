@@ -17,7 +17,7 @@ import { clearanceSource } from './clearanceSource'
 import { LabelOps } from './LabelOps'
 import { floorUnit } from './minText'
 import { useRowPlaces } from './RackLineLabels'
-import { aisleLabelOps, clearanceOpsAll, clearanceSolids } from '../render/labelOps'
+import { aisleLabelOps, clearanceOpsAll, clearanceSolids, chipSolids } from '../render/labelOps'
 import { crossAisleLabels } from './crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { isEmptySide } from '../utils/bayEmpty'
@@ -338,16 +338,19 @@ export function AisleLabel({ aisle, objects, lz, gridSize, profile = null, colum
   /* `columns`: the layout's column squares — the label slides along the aisle off any column (hitTest.js
      aisleLabelStation), at the size it is drawn */
   const L = aisleLabelLayout(aisle, objects, gridSize, { profile, columns, lz })
+  // (rack-round2 8) the chip keeps off its two rows and the columns (a chip that does not fit its aisle goes past one end)
+  const solids = useMemo(() => [...clearanceSolids(objects, gridSize), ...(columns || []).map(c => ({ x: c.x, y: c.y, w: c.w ?? c.width, h: c.h ?? c.height }))], [objects, gridSize, columns])
   if (!L) return null
-  return <AisleLabelView L={L} name={'aisle:' + aisle.id} lz={lz} />
+  return <AisleLabelView L={L} name={'aisle:' + aisle.id} lz={lz} solids={solids} />
 }
 
 /* A width label drawn from a layout ({ isHoriz, gapLo, gapHi, labelMid,
    positions, text }): an arrow across the gap at each station with the width
    in a pill. Aisle labels and cross-aisle labels both draw through this, so
    they look the same. */
-export function AisleLabelView({ L, name, lz }) {
-  const ops = useMemo(() => aisleLabelOps(L, lz), [L, lz])
+export function AisleLabelView({ L, name, lz, solids = null }) {
+  // (rack-round2 8) `solids`: what the chip keeps off (labelOps chipSolids) — a copy, so each chip is laid out on its own
+  const ops = useMemo(() => aisleLabelOps(L, lz, { solids: solids ? solids.slice() : null }), [L, lz, solids])
   // (Rule 8) a width shows only when it fits its gap at 11 px or more, off the racks and columns (labels-final)
   return <LabelOps ops={ops} name={name} cover />
 }
@@ -374,7 +377,8 @@ export const FaceAisleLabels = memo(function FaceAisleLabels({ objects, lz, grid
     // a rack and a wall or zone: never across a section edge, never open floor (hitTest.js gapShown)
     return all.filter(L => gapShown(L, objects, gridSize, R.of(L.rackId), false))
   }, [objects, gridSize, profile])
-  return <>{list.map((L, i) => <AisleLabelView key={L.rackId + ':' + i} L={L} name={'face-aisle:' + L.rackId + ':' + i} lz={lz} />)}</>
+  const solids = useMemo(() => chipSolids(objects, gridSize), [objects, gridSize])   // (rack-round2 8)
+  return <>{list.map((L, i) => <AisleLabelView key={L.rackId + ':' + i} L={L} name={'face-aisle:' + L.rackId + ':' + i} lz={lz} solids={solids} />)}</>
 })
 
 const EMPTY = []

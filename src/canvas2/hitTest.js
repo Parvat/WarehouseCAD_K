@@ -181,7 +181,7 @@ export function aisleLabelLayout(aisle, objects, gridSize = 40, { profile = null
   const cols = columns === undefined ? labelBlockersOf(objects, gridSize) : (columns || [])   // (d2-labels: + drawn objects)
   const scale = lz || textLz('aisle', gridSize, aisle && aisle.labelSizeIn)
   const pos = aisleLabelStation({ isHoriz, gapLo, gapHi, labelMid, runLo, runLen, text }, cols, scale)
-  return { isHoriz, gapLo, gapHi, labelMid, positions: [pos], level, text }
+  return { isHoriz, gapLo, gapHi, labelMid, positions: [pos], level, text, runLo, runLen }   // (rack-round2 8) its run: a chip that does not fit goes past its end
 }
 
 /* ── which gaps get a width label (labels-sections, STUDIO.md §7a) ──

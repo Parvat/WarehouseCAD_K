@@ -60,11 +60,13 @@ export function lineSections(objects, T, gridSize = 40) {
  *  (row-numbering fixes: no letter codes — the section is said by its name, its chip colour). */
 export function lineNamer(objects, T, gridSize = 40) {
   const secOf = lineSections(objects, T, gridSize)
-  if (!secOf) return (no) => 'R' + no
+  // (rack-round2 3) a rack that is not a beam rack is named by its type's letter and its own sequence (D1, C2 …)
+  const all = rackNumbersNow(objects || [], gridSize)
+  if (!secOf) { const tags = new Map(all.filter(l => l.tag).map(l => [l.no, l.tag])); return (no) => tags.get(no) || 'R' + no }
   const order = new Map(), count = new Map()
-  for (const l of rackNumbersNow(objects || [], gridSize)) {
-    const k = secOf.get(l.no)?.id || 'unassigned', n = (count.get(k) || 0) + 1
-    count.set(k, n); order.set(l.no, 'R' + n)
+  for (const l of all) {
+    const letter = l.letter || 'R', k = (secOf.get(l.no)?.id || 'unassigned') + ':' + letter, n = (count.get(k) || 0) + 1
+    count.set(k, n); order.set(l.no, letter + n)
   }
   return (no) => order.get(no) || 'R' + no
 }

@@ -194,7 +194,7 @@ export function faceAisleLabels(objects, gridSize = 40, { profile = MHE_PROFILES
     const b = g.box, isHoriz = !g.vert                              // horizontal rows: the gap runs across in y
     const gapLo = isHoriz ? b.y : b.x, gapHi = isHoriz ? b.y + b.h : b.x + b.w
     const runLo = isHoriz ? b.x : b.y, runLen = isHoriz ? b.w : b.h
-    return { isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions: [runLo + runLen / 2], level: g.level, text: fmtLenDown(g.width, gridSize), rackId: g.rack.id }
+    return { isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions: [runLo + runLen / 2], level: g.level, text: fmtLenDown(g.width, gridSize), rackId: g.rack.id, runLo, runLen }
   })
 }
 

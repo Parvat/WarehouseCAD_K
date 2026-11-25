@@ -1,120 +1,87 @@
-# Morning — rack-fixes and rack-followup (2026-11-25)
+# Morning — rack-round2 (2026-11-25)
 
-## Branches
-| Branch | Status | What |
+Branch `rack-round2` from master 1cd4ccb. Report: `docs/reports/rack-round2.md`. **Full suite: 4558 / 4558**
+
+## Status
+| # | Item | Status |
 |---|---|---|
-| Step 0: `overnight-rack-design` (03e0e51) | **green** | The full suite before anything else: 4518 / 4518. Nothing to fix. |
-| `rack-fixes` (c1e56df) | **done** | 1. Overlap red for every rack type. 2. Drive-through arrows at both ends, every lane arrow at real size. 3. Tab then drag. 4. Lighter beam pallet slots. Report: `docs/reports/rack-fixes.md` |
-| `rack-followup` (from rack-fixes) | **done** | 5. R numbers on every rack. 6. Every library type follows the mouse. 7. The rotate handle clear of the face words and the size label. Report: `docs/reports/rack-followup.md`. **Full suite: 4536 / 4536** |
+| 1 | Face aisle check for every rack type | **done**. Red on a short ENTRY / LOAD / PICK face, the arm side or the pick side, with an aisle chip; live while dragging; Check layout; new fixture `lanes-horizontal` |
+| 2 | Rack number position | **done**. Non-beam numbers try the start end, the other end, above, then below, and never touch a wall, column, rack, zone or label; beam labels unchanged |
+| 3 | Letters per type | **done**. D, T, P, F, C, S and M, each with its own sequence; the mezzanine is numbered now (M1); R numbers and the BOM unchanged |
+| 4 | Moving a placed rack | **done**. Nothing left behind; during the drag a red outline on both racks only; after the drop a 1.5 px X inside each covered slot; drag smoothness measured (p95 unchanged) |
+| 5 | Zone over racking | **done**. Nothing removed on its own; red while placing, dragging or resizing; the bar's "Covers R…" with Remove racks / Keep; one undo |
+| 6 | Text drag | **done**. Not a drag bug: last round's test pressed the text's resize handle. Every kind that can be dragged follows the mouse exactly; off the Polish list |
+| 7 | Usable count | **done**. Positions covered by a zone (Keep), covered by an overlap, or behind a short face come off usable for every type |
+| 8 | Aisle chip position | **done**. Centred when it fits, else just past one end of the aisle on the free side; no chip moved on the demo file or the four fixtures |
 
-Nothing was parked. Rule 7 showed no surprise: before and after are identical on the demo file and all 4 fixtures, for
-both branches.
+Nothing was parked. Rule 7 showed no surprise: the demo file and the four fixtures are identical in every count and
+label, and no chip moved. The new fixture has one red: T1's ENTRY against the wall.
 
-Merge, once the hand-check passes. `rack-followup` holds everything: last night's run, then rack-fixes, then itself.
+Merge, once the hand-check passes:
 ```
-git fetch . rack-followup:master rack-followup:canvas2-clean-start
+git fetch . rack-round2:master rack-round2:canvas2-clean-start
 git push origin master canvas2-clean-start
 ```
 
-## Rule 7
-| Layout | rack-fixes: card, BOM, picks, save→load, PDF, Regenerate | New reds | rack-followup: beam R numbers, counts, BOM | R labels drawn |
-|---|---|---|---|---|
-| demo-warehouse.wcad | identical | 0 | identical | 22 → 22 |
-| older-horizontal | identical | 0 | identical | 11 → 11 |
-| older-vertical | identical | 0 | identical | 14 → 14 |
-| crowded-horizontal | identical | 0 | identical | 11 → 11 |
-| crowded-vertical | identical | 0 | identical | 14 → 14 |
-
-All five layouts hold beam racks only, so the new red and the new numbers have nothing there to mark. On a layout with
-other types (the screenshot scene), the beam racks keep R1–R6 and the others follow as R7….
-
-## A correction to last night
-`docs/reports/rack-basics.md` said REG-basics Racking had 0 failures. That was wrong. Rerunning it on 03e0e51 shows 4
-failures per fixture: the double-click keep check for Selective, Back-to-back, Double-deep and the filled-building
-Selective.
-- The fault was the test: its two clicks landed below the building, where a row is refused. The feature itself works,
-  as REG-rack-library-keep shows.
-- The check now clicks where the ghost has room, and it is a hard fail for every rack type now (rack-followup).
-
-## What I decided without asking (each also in its report)
-1. **Overlap red** for a pair with a non-beam rack is a red X on each position the other rack covers, the same mark
-   two beam racks get. Two beam racks keep exactly today's marks.
-   - The usable count is not reduced for a non-beam overlap: that would be a capacity rule change.
-   - A selective can now be placed under a mezzanine; it used to be refused.
-2. **Arrow stroke** is 2″ real, which is the mockup's 2 px at 30 %.
-3. **Tab then drag** never applies to the building or a section: a press on a rack in a selected building still moves
-   the rack.
-4. **The new placement** for drive-in … mezzanine snaps like a zone: onto wall faces and rack edges, and inside the
-   walls. Alt turns snap off for these types only; Selective is unchanged.
-   - It is blocked over a rack (a mezzanine never), but not outside a building, since these could always go anywhere.
-5. **The new R numbers** sit where the mockup puts them, at the start end beside the rack. They are placed after the
-   beam numbers, so no beam label moves.
-6. **The rotate handle** also clears the selected rack's own size label (2L × 5D …), which is a label too.
+## A note on screenshots
+The before/after screenshots that docs/reports/rack-fixes.md and rack-followup.md link to were never committed. PNGs are
+gitignored, and those two rounds did not force-add them. They were lost when the wt-rf worktree was removed. This round's
+screenshots are force-added (docs/reports/rack-round2/), and they cover the same racks.
 
 ## Questions for PP
-1. **Usable count:** should a non-beam rack's positions covered by an overlap come off the usable count, as two beam racks'
-   do? It is drawn red today but not counted.
-2. **BOM lines for the other types:** these now have R numbers but no BOM line. Is that the plan, so that each type gets
-   its BOM when built?
-3. **A text drag:** a text dragged on its own moves only down, and less than the mouse did. This was found by the
-   Tab-drag test and was there before this work. It is on the Polish list; fix it next?
-4. **Still open from last night:** the mockup's lanes are wider than real 46″ lanes. Is keeping real sizes right?
+1. **Shelving's pick side:** is "the side not backed by a wall or a rack within 2′" right? A shelving unit open on both
+   sides is not checked.
+2. **A rack in a cross-aisle splits the beam line across it** (this was already so on master), so the beam numbers
+   change. Should a non-beam rack in a cross-aisle leave the beam line whole?
+3. **Drive-through usable:** with one end short it keeps its positions, because it still works as a drive-in. Agreed?
+4. **Remove racks on a non-beam rack:** today's zone cut removes a drive-in the zone touches at all, as one piece. Should
+   it lose only the covered lanes?
 
-## Hand-check (one list)
-**From last night**
-1. Place each rack type from the Racking library. Check that the colours match the families (pallet navy, lane green,
-   flow amber, other purple, mezzanine grey), that nothing is filled, and that the pallet dashes show.
-2. Select a rack: a blue outline 4 px out, white corner squares, and the rack's lines keep their colour.
-3. Zoom to 30, 100 and 200 %: the lines stay sharp. Ctrl + and Ctrl − in the browser: still sharp.
-4. Open the library. Check that it is narrow, that the icons are in family colours, that a tooltip shows after a moment,
-   and that Carton flow is greyed with the tooltip "Coming soon".
-5. In the library, type "drive", then try Up, Down and Enter. Esc clears the search, and Esc again closes the library.
-6. Open an old file with a Rack Row (multi-bay): it loads and selects, and Add bay takes one undo.
-7. Export a PDF: the same colours, no fill, and the ENTRY / LOAD / PICK words.
-8. Undo, redo, save and reload.
-9. A drive-in: the lane lines are as heavy as its outline, the posts are square, and the arrow heads are open. A
-   mezzanine: a heavier dashed edge and bigger posts.
+## Hand-check (one list, items 1–8)
+**1. Face aisles**
 
-**Overlap red**
+1. Open the lanes fixture (`src/__test__/plan/handCheck/lanes-horizontal.wcad`). T1's top ENTRY, against the wall,
+   is red, with a 0″ chip just past its left end. D1 is not red.
+2. Drag D1 until its top sits about 4′ below T1's bottom. T1's bottom ENTRY turns red while you drag and stays red after
+   the drop. Ctrl+Z.
+3. Press Check: "T1: ENTRY face has 0″ in front (the wall) — needs …".
 
-10. Drag a drive-in onto a selective: red X marks show on both while you drag and after you drop. Drag it off: the red
-    goes. Ctrl+Z undoes the move in one step.
-11. Drag a mezzanine over a rack: no red.
+**2. Number position**
 
-**Lane arrows**
+4. Place a drive-in and a pallet flow beside walls and columns. Their numbers (D1, F1) never touch a wall, column, rack,
+   zone or label at 10 %, 30 % or 100 %. The beam numbers have not moved.
 
-12. A drive-through has arrows at both ends: the bottom ones point up into the lanes, the top ones point down.
-13. Zoom out from 100 % to 15 %: the arrows get thinner, never thicker.
+**3. Letters**
 
-**Tab then drag**
+5. Add a pallet flow, a cantilever and a second drive-in: F1, C1, D2.
+6. Delete D1: the other becomes D1. Ctrl+Z.
+7. A mezzanine shows M1. The BOM still lists only the beam racks.
 
-14. Put a forklift on a rack and click the forklift. Press Tab: the rack is selected. Drag: only the rack moves. Ctrl+Z.
-15. A click without a drag still selects the forklift.
+**4. Moving a rack**
 
-**Pallet slots**
+8. Drag a drive-in onto a selective:
+   - only the one rack moves, and nothing stays at its old place;
+   - while dragging, a red outline shows on both racks;
+   - after the drop, small X marks sit inside the covered slots.
 
-16. Selective, back-to-back and double-deep slots are fainter. Drive-in, push-back, flow, cantilever and shelving look
-    as before. Check the PDF too.
+**5. Zones**
 
-**R numbers**
+9. Drag an office onto a selective. Nothing is removed and the rack shows red. The office's bar says "Covers R1" with
+   Remove racks and Keep.
+10. Keep: the rack stays red, and the card's usable drops. Drag the office away: no red.
+11. Drag it back and press Remove racks: the covered bays go. Ctrl+Z brings them back.
 
-17. Open an old file: the R numbers are as before.
-18. In a new layout, add two selectives, a drive-in, a pallet flow, a cantilever, a shelving unit and a mezzanine. The
-    selectives are R1 and R2, the others R3 to R6, and the mezzanine has none.
-19. Delete the drive-in: the numbers close up. Ctrl+Z. Ctrl+D on the pallet flow: R7. Ctrl+Z.
-20. The BOM lists only the beam racks.
+**6. Text**
 
-**Placement**
+12. Drag a text up, down, left and right: it lands exactly where you let go. Ctrl+Z after each.
+13. Drag a zone by its name: the zone moves exactly as far.
 
-21. For each of Drive-in, Drive-through, Push-back, Pallet flow, Cantilever, Shelving and Mezzanine, in the library:
-    - pick it: a ghost follows the mouse;
-    - move near a wall: it snaps; hold Alt: it doesn't;
-    - Esc: nothing placed;
-    - pick it again and click: one placed, back to Select;
-    - double-click the row: each click places one until Esc.
-22. Selective, Back-to-back and Double-deep behave as before.
+**7. Usable**
 
-**Rotate handle**
+14. A drive-in over a selective, an office kept over racks, and a drive-in with its ENTRY against a wall all lower the
+    card's usable. Positions and the BOM stay the same.
 
-23. Select a drive-through and a pallet flow at 15 %, 30 % and 100 %: the rotate handle sits above ENTRY / LOAD and
-    above the size label. Turn it: it still rotates, and one Ctrl+Z undoes it.
+**8. Chips**
+
+15. Zoom to 15, 30 and 100 %: no aisle chip covers a rack, a column, a zone, a rack number or another chip.
+16. T1's 0″ chip sits just past the end of its face.

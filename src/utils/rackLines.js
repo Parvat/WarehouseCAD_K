@@ -123,8 +123,9 @@ export const rackLinesNow = (objects, gridSize = 40) => numberLines(objects, gri
    the up-and-down ones first, across, along). Each is its own "line" (none of these types stands in a line or pairs). A
    mezzanine is a platform: no number. Nothing is stored — renumbered on every add, delete, duplicate and undo, as the
    beam lines are. They have no BOM line yet (the BOM reads numberLines only). */
-const NO_NUMBER = new Set(['rack_mezzanine'])
-const isOtherRack = (o) => !!o && typeof o.type === 'string' && o.type.startsWith('rack_') && !BEAM.has(o.type) && !NO_NUMBER.has(o.type) && o.width > 0 && o.height > 0
+/** (rack-round2 3) Each type's letter — its own sequence (D1, D2 …; C1 …), no gaps. The beam racks stay R. */
+export const RACK_LETTERS = { rack_drive_in: 'D', rack_drive_through: 'T', rack_pushback: 'P', rack_pallet_flow: 'F', rack_cantilever: 'C', rack_shelving: 'S', rack_mezzanine: 'M' }
+const isOtherRack = (o) => !!o && typeof o.type === 'string' && o.type.startsWith('rack_') && !BEAM.has(o.type) && o.width > 0 && o.height > 0
 const otherCache = new WeakMap()
 /** The racks that are not beam racks, as lines in numbering order (before the numbers): [{ key, ids: [id], ws: 'one',
  *  vert, r0, r1, s0, s1, band, fpId, other: true }]. */
@@ -138,7 +139,7 @@ export function otherRackLinesOf(objects, gridSize = 40) {
     const s = span(o), a = (s.r0 + s.r1) / 2, band = (s.s0 + s.s1) / 2
     const x = s.vert ? band : a, y = s.vert ? a : band, i = polys.findIndex(q => pointInPolygon(q, x, y))
     return { key: o.id + ':one', ids: [o.id], ws: 'one', vert: s.vert, r0: s.r0, r1: s.r1, s0: s.s0, s1: s.s1, band, pieces: [{ r0: s.r0, r1: s.r1, ids: [o.id] }],
-      fpId: o.parentId ?? null, fpAt: fpOrder.get(o.parentId) ?? 1e9, secAt: i >= 0 ? i : polys.length, other: true }
+      fpId: o.parentId ?? null, fpAt: fpOrder.get(o.parentId) ?? 1e9, secAt: i >= 0 ? i : polys.length, other: true, letter: RACK_LETTERS[o.type] || 'X' }
   })
   lines.sort((a, b) => a.secAt - b.secAt || a.fpAt - b.fpAt || (a.vert === b.vert ? 0 : a.vert ? -1 : 1) || a.band - b.band || a.r0 - b.r0)
   otherCache.set(objects, { gridSize, lines })
@@ -148,6 +149,8 @@ export function otherRackLinesOf(objects, gridSize = 40) {
 /** Every rack's number as the plan draws it: the beam lines R1…Rn (numberLines — the BOM's), then every other rack
  *  Rn+1 … (otherRackLinesOf). → [{ ...line, no }]. */
 export function rackNumbersNow(objects, gridSize = 40) {
-  const beam = numberLines(objects, gridSize), n = beam.length
-  return [...beam, ...otherRackLinesOf(objects, gridSize).map((l, i) => ({ ...l, no: n + i + 1 }))]
+  const beam = numberLines(objects, gridSize), n = beam.length, seq = new Map()
+  // (rack-round2 3) `no` stays one run across every rack (the labels' keys); `tag` is what is drawn: its letter and its
+  // place in its own type's sequence, in the same order — D1, D2 …, C1 …
+  return [...beam, ...otherRackLinesOf(objects, gridSize).map((l, i) => { const k = (seq.get(l.letter) || 0) + 1; seq.set(l.letter, k); return { ...l, no: n + i + 1, tag: l.letter + k } })]
 }
