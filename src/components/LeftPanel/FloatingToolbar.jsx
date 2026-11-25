@@ -971,6 +971,9 @@ export function FloatingToolbar({ studio = false } = {}) {
       const palletW=(item.meta?.palletWIn||40)/12*GS, palletD=(item.meta?.palletDIn||48)/12*GS
       const lanes=variant.lanes||2, deep=variant.palletDeep||5
       w=(lanes+1)*upPx+lanes*(ledgePx*2+clearPx*2+palletW); h=deep*palletD
+    } else if (item.type === 'rack_shelving') {
+      // (rack-round3 6) standard units, 48 × 24 in by default (two of them — the run it placed before, in whole units)
+      w=2*48/12*GS; h=24/12*GS
     } else if (RACK_TYPES.has(item.type)) {
       w=((uprightInches*(bays+1)+beams.reduce((s,b)=>s+b,0))/12)*GS; h=variant.h*GS
     } else {
@@ -991,6 +994,7 @@ export function FloatingToolbar({ studio = false } = {}) {
       strokeWidth:1.5, label:item.label, snapType:item.snapType,
       aisleMin:item.aisleMin||variant.aisleMin, clearance:item.clearance,
       uprightWidth:uprightInches,
+      ...(item.type==='rack_shelving'?{ unitWidthIn:48, shelfDepth:24, shelves:item.meta?.shelves||5 }:{}),
       ...(BAY_RACK_TYPES.has(item.type)?{beams,activeBayIdx:null,palletWIn:40,palletDIn:48,palletDeep:variant.palletDeep??null}:{}),
       ...(['rack_drive_in','rack_drive_through','rack_pushback','rack_pallet_flow'].includes(item.type)?{
         lanes:variant.lanes||2, palletDeep:variant.palletDeep||(item.type==='rack_pushback'?2:5),

@@ -23,6 +23,7 @@ import { faceAisleLabels } from '../generate/faceAisles'
 import { isEmptySide } from '../utils/bayEmpty'
 import { useFlued } from './dragPreview'   // (gen-lock)
 import { faceWordsReach } from '../render/rackOps'   // (rack-design)
+import { shelvingLabel, shelvingTag } from '../utils/shelving'   // (rack-round3 6)
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
    CanvasUI.jsx's RackLabels/FpSegmentDimLabels and CanvasOverlays.jsx's live
@@ -61,7 +62,7 @@ import { faceWordsReach } from '../render/rackOps'   // (rack-design)
 
 const RACK_LABEL_TYPES = new Set([
   'rack_row', 'rack_double_row', 'rack_cantilever',
-  'rack_pushback', 'rack_pallet_flow', 'rack_drive_in', 'rack_drive_through',
+  'rack_pushback', 'rack_pallet_flow', 'rack_drive_in', 'rack_drive_through', 'rack_shelving',
 ])
 const LANE_RACK_TYPES = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow'])
 
@@ -194,6 +195,12 @@ export function RackLabels({ obj: stored, zoom, gridSize }) {
     }
     const totY = by + bh + 14 / zoom
     nodes.push(<LabelPill key="total" cx={bx + bw / 2} cy={totY} text={fmtIn(bw)} fontSize={fs} zoom={zoom} color={clr} />)
+  }
+
+  /* (rack-round3 6) a shelving unit selected: its size label under it (as the other racks' sizes; the rotate handle is over it) — "S1 · 4 units · 48×24 · 5 shelves" */
+  if (obj.type === 'rack_shelving') {
+    const st = useCanvasStore.getState()
+    nodes.push(<LabelPill key="shelving" cx={bx + bw / 2} cy={by + bh + 14 / zoom} text={shelvingLabel(obj, gridSize, shelvingTag(st.objects, obj, gridSize, st.elevations))} fontSize={fs} zoom={zoom} color={clr} />)
   }
 
   if (LANE_RACK_TYPES.has(obj.type)) {

@@ -50,12 +50,12 @@ describe('rackOps — shelving', () => {
     expect(ops[0]).toMatchObject({ op: 'rect', border: true, fill: null, stroke: RACK_FAMILIES.other.line })
   })
 
-  it('splits the run into units about 4 ft wide, each with its shelf count inside', () => {
+  it('splits the run into units about 4 ft wide — (rack-round3 6, was: each with its shelf count inside) no shelf count drawn', () => {
     const units = ops.find(o => o.name === 'shelf-units')
     expect(units.segs.length / 4).toBe(5)                       // 6 units: 5 lines between them
     const counts = ops.filter(o => o.op === 'text')
-    expect(counts.map(o => o.text)).toEqual(Array(6).fill('5'))
-    for (const c of counts) expect(c.color).toBe(RACK_FAMILIES.other.line)
+    expect(counts).toEqual([])                                  // the size label carries it: "S1 · 6 units · 48×24 · 5 shelves"
+    void RACK_FAMILIES
   })
 
   it('has no travel arrows — nothing drives into shelving', () => {

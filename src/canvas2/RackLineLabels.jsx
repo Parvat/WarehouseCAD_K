@@ -33,11 +33,12 @@ import { MIN_TEXT_PX } from './minText'
 import { useTextSizes, textLz } from '../utils/textSizes'
 import { checkedNos } from '../studio/tally'
 import { lineNamer, lineSections, chipText } from '../utils/lineNames'
-import { buildingOutline } from '../utils/floorGeom'
+import { buildingOutline, innerOutline } from '../utils/floorGeom'
 import { pointInPolygon } from '../utils/sectionAreas'
 import { useLabelObjects, useLabelsHeld } from './settled'
 import { useDragPreview } from './dragPreview'   // (drag-perf-bar)
 import { RACK_NUMBER } from '../render/rackFamily'   // (rack-design) the rack numbers' colour
+import { faceWordsReach } from '../render/rackOps'   // (rack-round3 5)
 
 const WORDS = RACK_NUMBER, TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 /** The label's size in drawing units: the aisle labels' 10 at the Label size. */
@@ -93,7 +94,19 @@ function otherAvoid(objects, gs) {
   for (const L of all) if (gapShown(L, objects, gs, R.of(L.rackId), false)) for (const o of aisleLabelOps(L, lz)) if (o.op === 'rect') out.push({ x: o.x, y: o.y, w: o.w, h: o.h })
   // the aisle and cross-aisle width labels whole — their arrows across the gap too, not only their pills
   out.push(...aisleLabelBoxes(objects, gs, undefined, { whole: true }))
-  for (const o of objects) if (typeof o?.type === 'string' && o.type.startsWith('rack_') && o.width > 0 && o.height > 0) { const f = rackFootprint(o); out.push({ x: f.x, y: f.y, w: f.w, h: f.h }) }
+  for (const o of objects) if (typeof o?.type === 'string' && o.type.startsWith('rack_') && o.width > 0 && o.height > 0) {
+    const f = rackFootprint(o)
+    out.push({ x: f.x, y: f.y, w: f.w, h: f.h })
+    /* (rack-round3 5) its face words (ENTRY, LOAD, PICK) drawn past its top and bottom faces: a number never on them */
+    const rot = ((((o.rotation || 0) % 360) + 360) % 360) / 90 | 0
+    for (const side of ['top', 'bottom']) {
+      const r = faceWordsReach(o, side, gs)
+      if (!r) continue
+      // the world side its local top / bottom faces after a turn of rot quarter-turns clockwise
+      const w = (['top', 'right', 'bottom', 'left'].indexOf(side) + rot) % 4
+      out.push(w === 0 ? { x: f.x, y: f.y - r, w: f.w, h: r } : w === 2 ? { x: f.x, y: f.y + f.h, w: f.w, h: r } : w === 1 ? { x: f.x + f.w, y: f.y, w: r, h: f.h } : { x: f.x - r, y: f.y, w: r, h: f.h })
+    }
+  }
   // the column clearances (a column in an aisle: its distance to the faces either side — ColumnClearanceLabels, the
   // warnings drawn always) and the column squares themselves
   try {
@@ -139,6 +152,28 @@ export function otherLabelPlaces(lines, fs, avoid = [], name = (n) => 'R' + n, o
   const fps = objects.filter(o => typeof o?.type === 'string' && o.type.startsWith('fp_')).map(o => buildingOutline(o).map(p => [p.x, p.y]))
   const inside = (b) => fps.some(P => [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].every(([x, y]) => pointInPolygon(P, x, y)))
   const clear = (b) => { const g = { x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m }; return !placed.some(p => meets(p, g)) && !blocks.some(p => meets(p, g)) }
+  // (rack-round3 5) every building's straight walls: its outer face `at`, its inner face `in` (innerOutline — the same
+  // corner order), along x or y over [a, b]; `out`: −1 / +1, the way out of the building across it
+  const near = 2 * gs, wallList = []
+  for (const o of objects) {
+    if (typeof o?.type !== 'string' || !o.type.startsWith('fp_')) continue
+    const P = buildingOutline(o), I = innerOutline(o, gs), t = (o.wallThicknessFt || 0.25) * gs
+    if (I.length !== P.length) continue
+    for (let i = 0; i < P.length; i++) {
+      const a = P[i], b = P[(i + 1) % P.length], ia = I[i]
+      if (Math.abs(a.x - b.x) < 0.5) wallList.push({ dir: 'v', at: a.x, in: ia.x, a: Math.min(a.y, b.y), b: Math.max(a.y, b.y), out: Math.sign(a.x - ia.x), t: Math.max(t, Math.abs(a.x - ia.x)) })
+      else if (Math.abs(a.y - b.y) < 0.5) wallList.push({ dir: 'h', at: a.y, in: ia.y, a: Math.min(a.x, b.x), b: Math.max(a.x, b.x), out: Math.sign(a.y - ia.y), t: Math.max(t, Math.abs(a.y - ia.y)) })
+    }
+  }
+  /** The walls within 2 ft of side `sd` of the box, outward of it, over its middle. */
+  const wallsNear = (sd, X0, X1, Y0, Y1) => wallList.filter(wl => {
+    if (sd === 'left' || sd === 'right') {
+      const sgn = sd === 'left' ? -1 : 1, x = sd === 'left' ? X0 : X1, cy = (Y0 + Y1) / 2
+      return wl.dir === 'v' && wl.out === sgn && wl.a <= cy && cy <= wl.b && sgn * (wl.in - x) >= -1 && sgn * (wl.in - x) <= near
+    }
+    const sgn = sd === 'top' ? -1 : 1, y = sd === 'top' ? Y0 : Y1, cx = (X0 + X1) / 2
+    return wl.dir === 'h' && wl.out === sgn && wl.a <= cx && cx <= wl.b && sgn * (wl.in - y) >= -1 && sgn * (wl.in - y) <= near
+  })
   for (const l of lines) {
     const text = name(l.no), w = text.length * fs * 0.62 + fs * 0.3
     const c = (l.s0 + l.s1) / 2, half = (l.s1 - l.s0) / 2
@@ -146,6 +181,25 @@ export function otherLabelPlaces(lines, fs, avoid = [], name = (n) => 'R' + n, o
     const X0 = l.vert ? l.s0 : l.r0, X1 = l.vert ? l.s1 : l.r1, Y0 = l.vert ? l.r0 : l.s0, Y1 = l.vert ? l.r1 : l.s1
     const cands = []
     const steps = [0]; for (let d = h; d <= half + h / 2; d += h) steps.push(d, -d)
+    /* (rack-round3 5) an end or a side within 2 ft of a building wall: the number goes OUTSIDE the building, just past that
+       wall, centred on the rack (as the beam racks' at the wall) — the start end first, then the other end, then the sides */
+    const order = l.vert ? ['top', 'bottom', 'left', 'right'] : ['left', 'right', 'top', 'bottom']
+    const out1 = []
+    for (const sd of order) for (const wl of wallsNear(sd, X0, X1, Y0, Y1)) {
+      const off0 = Math.max(gap, wl.t + 2 * m + 1), cy = (Y0 + Y1) / 2, cxx = (X0 + X1) / 2
+      const along = sd === 'left' || sd === 'right' ? (Y1 - Y0) / 2 : (X1 - X0) / 2, sl = [0]; for (let d = h; d <= along + h / 2; d += h) sl.push(d, -d)
+      // just past the wall; a face word drawn into the wall (ENTRY on a face at the wall) in the way: a half line further
+      for (const off of [off0, off0 + h / 2, off0 + h]) for (const d of sl) out1.push(sd === 'left' ? { x: wl.at - off - w, y: cy + d - h / 2, w, h, align: 'right' }
+        : sd === 'right' ? { x: wl.at + off, y: cy + d - h / 2, w, h, align: 'right' }
+        : sd === 'top' ? { x: cxx + d - w / 2, y: wl.at - off - h, w, h, align: 'center' }
+        : { x: cxx + d - w / 2, y: wl.at + off, w, h, align: 'center' })
+    }
+    const atWall = out1.find(clear)
+    if (atWall) {
+      placed.push(atWall)
+      out.push({ key: l.ids.join(',') + ':' + l.ws, text, nos: [l.no], x: atWall.x, y: atWall.y, w: atWall.w, h: atWall.h, align: atWall.align, vert: l.vert, r0: l.r0, s0: l.s0, s1: l.s1, wall: true })
+      continue
+    }
     // 1. the start end (as a beam rack's), sliding along it
     for (const d of steps) cands.push(l.vert ? { x: c + d - w / 2, y: l.r0 - gap - h, w, h, align: 'center' } : { x: l.r0 - gap - w, y: c + d - h / 2, w, h, align: 'right' })
     // 2. the other end

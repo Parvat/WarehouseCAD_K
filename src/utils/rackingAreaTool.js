@@ -31,7 +31,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import { planAreaResize, planAreaRebuild, areaEdits, areaSettings, removedRowBays, isArea, isZone, boxOf } from '../generate/rackingArea'
-import { applyZones } from './zoneCut'
+import { applyZones, LANE_TYPES } from './zoneCut'
 import { skipNextAction } from './rowGroupTool'
 import { rebuildAisles } from './aisleRebuild'
 import { floorFor, clampGrowth } from './floorClamp'
@@ -161,7 +161,10 @@ export function removeZoneRacks(store, zoneId) {
   if (!res.changed) return false
   const next = [...res.objects, ...others]
   commitAll(store, next, zoneId)
-  useAreaPrompt.setState({ note: zoneNote(zone, zone, removedRowBays(st.objects, next, gs).length) })
+  // (rack-round3 3) a lane rack loses only its covered lanes: the note counts them
+  const lanesOf = (list) => list.reduce((t, o) => t + (LANE_TYPES.has(o.type) ? Math.max(1, o.lanes || 2) : 0), 0)
+  const lanesGone = lanesOf(st.objects) - lanesOf(next)
+  useAreaPrompt.setState({ note: zoneNote(zone, zone, removedRowBays(st.objects, next, gs).length) + (lanesGone > 0 ? ` · ${lanesGone} lane${lanesGone === 1 ? '' : 's'} removed` : '') })
   return true
 }
 export const zoneNote = (z, was, removed, restored = 0, deleted = false) => {

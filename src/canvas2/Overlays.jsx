@@ -3,7 +3,8 @@ import { Rect, Line, Group } from 'react-konva'
 import { equipmentResolver } from '../utils/equipment'
 import { SelectionOutline } from './shapes'
 import { RackLabels, FpDimLabels, AisleLabelItem, CrossAisleLabels, FaceAisleLabels, ColumnClearanceLabels, rackLabelsEligible, AisleLabelView } from './DimensionLabels'
-import { laneFaceGaps, laneFaceOps } from '../generate/laneFaces'   // (rack-round2 1)
+import { laneFaceGaps } from '../generate/laneFaces'   // (rack-round2 1)
+import { faceLostMarks } from '../generate/coverLost'   // (rack-round3 4)
 import { walkwayInNow } from '../utils/zoneCheck'
 import { usePlacement, placedItems } from '../utils/placement'
 import { useMemo, useRef, memo } from 'react'
@@ -88,7 +89,10 @@ const OverlapMarks = memo(function OverlapMarks({ src: src0, dragging: drag0, gr
   /* (rack-round2 1) a short face of a rack that is not a beam rack (ENTRY, LOAD, PICK, the arm side, the pick side): red on
      the face and its aisle chip, as a beam aisle's — live while dragging and after the drop */
   const faces = useMemo(() => (profile ? laneFaceGaps(src, { gridSize, profile, walkwayIn: walkwayInNow() }) : []), [src, gridSize, profile])
-  const faceOps = useMemo(() => laneFaceOps(faces, 3 / z), [faces, z])
+  /* (rack-round3 4) no red line on the face (its bar stays in its family colour): the positions the short face loses get
+     the overlap's red X inside each slot, and its chip is red (a face that loses nothing: the chip alone) */
+  const faceOps = useMemo(() => (faces.length ? overlapOps(faceLostMarks(src, { gridSize, profile, faces }), 1.5 / z) : []), [faces, src, gridSize, profile, z])
+  const chips = useMemo(() => faces.map(g => ({ ...g, level: 1 })), [faces])
   const solids = useMemo(() => (faces.length ? chipSolids(src, gridSize) : null), [faces.length, src, gridSize])   // (rack-round2 8)
   const marks = useMemo(() => (dragging ? null : overlapMarks(src, gridSize)), [src, gridSize, dragging])
   const moving = useDragPreview(st => st.ids)
@@ -98,7 +102,7 @@ const OverlapMarks = memo(function OverlapMarks({ src: src0, dragging: drag0, gr
     <>
       {ops.length > 0 && <LabelOps ops={ops} name="rack-overlap" fit={false} />}
       {faceOps.length > 0 && <LabelOps ops={faceOps} name="lane-faces" fit={false} />}
-      {faces.map((g, i) => <AisleLabelView key={g.rackId + ':' + g.side} L={g} name={'lane-face:' + g.rackId + ':' + g.side} lz={aisleLz} solids={solids} />)}
+      {chips.map((g, i) => <AisleLabelView key={g.rackId + ':' + g.side} L={g} name={'lane-face:' + g.rackId + ':' + g.side} lz={aisleLz} solids={solids} />)}
     </>
   )
 })

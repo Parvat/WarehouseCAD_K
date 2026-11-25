@@ -60,7 +60,10 @@ import { crossAisleLabels } from '../canvas2/crossAisles'
 import { faceAisleLabels } from '../generate/faceAisles'
 import { narrowAisleBlocks, blockedKeys } from '../generate/narrowAisles'
 import { overlapMarks, overlapOps } from '../render/overlapOps'   // (rack-fixes 1)
-import { laneFaceGaps, laneFaceOps } from '../generate/laneFaces'   // (rack-round2 1)
+import { laneFaceGaps } from '../generate/laneFaces'   // (rack-round2 1)
+import { faceLostMarks } from '../generate/coverLost'   // (rack-round3 4)
+import { shelvingLabel, shelvingTag } from '../utils/shelving'   // (rack-round3 6)
+import { rackFootprint as shelfFoot } from '../generate/rackFootprint'
 import { walkwayInNow } from '../utils/zoneCheck'
 import { useLabelPrefs } from '../canvas2/labelPrefs'
 import { textLz, textHeight } from '../utils/textSizes'
@@ -389,10 +392,18 @@ export function labelsSVG(objects, gridSize, opts) {
       ops.push(...overlapOps(overlapMarks(objects, gridSize), 1.5 / lz))
       // (rack-round2 1) a short face of a rack that is not a beam rack: red on it, and its aisle chip, as on screen
       { const faces = laneFaceGaps(objects, { gridSize, profile: opts.profile || undefined, walkwayIn: walkwayInNow() }), solids = chipSolids(objects, gridSize)
-        ops.push(...laneFaceOps(faces, 3 / lz))
-        for (const g of faces) ops.push(...aisleLabelOps(g, textLz('aisle', gridSize), { solids })) }
+        // (rack-round3 4) the lost positions' red X (no line on the face), the chip red
+        ops.push(...overlapOps(faceLostMarks(objects, { gridSize, profile: opts.profile || undefined, faces }), 1.5 / lz))
+        for (const g of faces) ops.push(...aisleLabelOps({ ...g, level: 1 }, textLz('aisle', gridSize), { solids })) }
     }
   }
+  /* (rack-round3 6) each shelving unit's size label — "S1 · 4 units · 48×24 · 5 shelves" — under it, at the row numbers'
+     real height (no shelf count is drawn inside the units any more) */
+  { const sfs = 10 / textLz('row', gridSize)
+    for (const o of objects) if (o.type === 'rack_shelving' && o.width > 0 && o.height > 0) {
+      const f = shelfFoot(o), text = shelvingLabel(o, gridSize, shelvingTag(objects, o, gridSize, opts.elevations || null)), w = text.length * sfs * 0.62
+      ops.push({ op: 'text', name: 'shelving-size', x: f.x + f.w / 2 - w / 2, y: f.y + f.h + sfs * 0.4, w, h: sfs * 1.25, text, fontSize: sfs, fill: '#767C74', fontFamily: "'Plus Jakarta Sans', system-ui, sans-serif" })
+    } }
   return `<g class="labels">${ops.map(labelOpToSVG).join('')}</g>`
 }
 

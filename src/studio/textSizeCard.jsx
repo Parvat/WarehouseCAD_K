@@ -57,7 +57,7 @@ const save = () => { try { autoSave(serializeScene(useCanvasStore.getState())) }
  *  Enter or leaving the field. (d1-bar) The list opens ATTACHED to the field (studio/Popover.jsx anchorPlace): directly
  *  below it, left-aligned with it — above it with no room below — portalled over the canvas, so a bar's transform or a
  *  card's edge never moves or clips it (the Text bar's list used to open far to the right). */
-export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_OPTIONS }) {   // (d1-polish) `options`: its list (a block arrow's sizes)
+export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_OPTIONS, custom = false }) {   // (rack-round3 6) `custom`: a last row Custom — the field emptied to type any size   // (d1-polish) `options`: its list (a block arrow's sizes)
   const show = sizeText(inches)
   const [text, setText] = useState(show)
   const [bad, setBad] = useState(false)
@@ -72,7 +72,8 @@ export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_
     if (v == null) { setBad(true); return }
     setBad(false); if (v !== inches) onCommit(v); else setText(show)
   }
-  const ROW = 26, LIST_H = options.length * ROW + 8
+  const input = useRef(null)
+  const ROW = 26, LIST_H = (options.length + (custom ? 1 : 0)) * ROW + 8
   const place = () => {
     const r = wrap.current?.getBoundingClientRect()
     if (!r) return null
@@ -92,7 +93,7 @@ export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_
   const listId = 'size-list-' + aria.replace(/\W+/g, '-').toLowerCase()
   return (
     <span ref={wrap} style={{ position: 'relative', display: 'inline-flex', width: 76 }}>
-      <input type="text" inputMode="decimal" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="none"
+      <input ref={input} type="text" inputMode="decimal" role="combobox" aria-expanded={open} aria-controls={listId} aria-autocomplete="none"
         aria-label={aria} value={text} placeholder={placeholder} className="st-field" aria-invalid={bad || undefined}
         style={{ ...fieldBox(false), width: '100%', paddingRight: 22, ...(bad ? { outline: '1px solid #E5484D' } : null) }}
         onChange={e => setText(e.target.value)}
@@ -129,6 +130,13 @@ export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_
               </div>
             )
           })}
+          {custom && (
+            <div role="option" aria-selected={!options.includes(inches)} data-size="custom" onMouseDown={e => e.preventDefault()}
+              onClick={() => { setOpen(false); setText(''); setBad(false); setTimeout(() => input.current?.focus(), 0) }}
+              style={{ height: ROW, display: 'flex', alignItems: 'center', padding: '0 8px', borderRadius: 5, cursor: 'pointer', fontSize: 12, color: !options.includes(inches) ? '#7BD3A4' : '#E8EAE6' }}>
+              Custom
+            </div>
+          )}
         </div>, popHost()
       )}
     </span>

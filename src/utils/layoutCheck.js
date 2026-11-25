@@ -229,13 +229,21 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
 
   /* (rack-round2 1) a face of a rack that is not a beam rack (ENTRY, LOAD, PICK, the arm side, the pick side) with less
      than its aisle in front — generate/laneFaces.js, the red on the plan */
-  for (const g of laneFaceGaps(objects, { gridSize, profile, walkwayIn })) {
+  const laneGaps = laneFaceGaps(objects, { gridSize, profile, walkwayIn })
+  const shortN = new Map(); for (const g of laneGaps) shortN.set(g.rack.id, (shortN.get(g.rack.id) || 0) + 1)
+  for (const g of laneGaps) {
+    // (rack-round3 2) a drive-through with ONE end short keeps its positions (it still works, from its open end — last in,
+    // first out): a warning that says so, never an error
+    const asDriveIn = g.rack.type === 'rack_drive_through' && shortN.get(g.rack.id) === 1
+    // (rack-round3) a shelving unit open on both sides, one short: still picked from the other — a warning
+    const oneSide = g.rack.type === 'rack_shelving' && g.nSides === 2 && shortN.get(g.rack.id) === 1
     const need = g.rack.type === 'rack_shelving' ? (walkwayIn / 12) * gridSize : profile.aisleFt * gridSize
     const what = g.word ? g.word + ' face' : g.rack.type === 'rack_cantilever' ? 'arm side' : 'pick side'
     const by = { wall: 'the wall', column: 'a column', rack: 'a rack', zone: 'a zone', door: "a door's clear space" }[g.kind] || 'something'
     const item = { severity: g.level === 1 ? 'error' : 'warning', kind: 'aisle-face', ids: [g.rack.id], box: union([{ x: g.box.x, y: g.box.y, w: Math.max(g.box.w, 1), h: Math.max(g.box.h, 1) }, foot.get(g.rack.id)]),
-      highlight: [outline(foot.get(g.rack.id), HL.red)], text: `${name(g.rack)}: ${what} has ${len(g.width)} in front (${by}) — needs ${len(need)}` }
-    ;(g.level === 1 ? errors : warnings).push(item)
+      highlight: [outline(foot.get(g.rack.id), HL.red)], text: `${name(g.rack)}: ${what} has ${len(g.width)} in front (${by}) — needs ${len(need)}${asDriveIn ? '; works as drive-in only' : oneSide ? '; picked from the other side only' : ''}` }
+    if (asDriveIn || oneSide) { item.severity = 'warning'; item.highlight = [outline(foot.get(g.rack.id), HL.amber)] }
+    ;(g.level === 1 && !asDriveIn && !oneSide ? errors : warnings).push(item)
   }
 
   // ── each rack: overlap, inside a zone, wall, reach, bays, angle ──

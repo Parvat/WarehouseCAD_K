@@ -90,13 +90,14 @@ export function laneFaceGaps(objects, { gridSize = 40, profile = MHE_PROFILES.re
     const ctx = { boxes: [...fixed, ...rackBoxes.filter(b => b.id !== r.id)], poly }
     let sides = facesOf(r), need = aislePx
     if (r.type === 'rack_shelving') {
-      // its pick side: the side NOT backed by a wall or a rack within 2' (as a single selective's face); open on both
-      // sides it picks from either — not checked; backed on both, its front (bottom) is short
+      // its pick side: the side NOT backed by a wall or a rack within 2' (as a single selective's face); (rack-round3, PP
+      // 2026-11-25 — was: not checked) open on both sides, both are checked; backed on both, its front (bottom) is short
       need = walkPx
       const backed = (s) => { const m = clearInFront(faceLine(f, normalOf(s, rot)), backPx + E, ctx); return (m.kind === 'wall' || m.kind === 'rack') && m.d <= backPx + E }
       const bt = backed('top'), bb = backed('bottom')
-      sides = bt && !bb ? ['bottom'] : bb && !bt ? ['top'] : bt && bb ? ['bottom'] : []
+      sides = bt && !bb ? ['bottom'] : bb && !bt ? ['top'] : bt && bb ? ['bottom'] : ['top', 'bottom']
     }
+    const nSides = sides.length
     for (const side of sides) {
       const fl = faceLine(f, normalOf(side, rot)), m = clearInFront(fl, need + E, ctx)
       if (!m.kind) continue
@@ -105,7 +106,7 @@ export function laneFaceGaps(objects, { gridSize = 40, profile = MHE_PROFILES.re
       const isHoriz = fl.along === 'x', gapLo = fl.dir > 0 ? fl.at : fl.at - m.d, gapHi = fl.dir > 0 ? fl.at + m.d : fl.at
       const face = isHoriz ? { x1: fl.a, y1: fl.at, x2: fl.c, y2: fl.at } : { x1: fl.at, y1: fl.a, x2: fl.at, y2: fl.c }
       const box = isHoriz ? { x: fl.a, y: gapLo, w: fl.c - fl.a, h: m.d } : { x: gapLo, y: fl.a, w: m.d, h: fl.c - fl.a }
-      out.push({ rack: r, rackId: r.id, side, word: FACE_WORD[r.type]?.[side] || null, width: m.d, level, kind: m.kind, face, box,
+      out.push({ rack: r, rackId: r.id, side, nSides, word: FACE_WORD[r.type]?.[side] || null, width: m.d, level, kind: m.kind, face, box,
         isHoriz, gapLo, gapHi, labelMid: (gapLo + gapHi) / 2, positions: [(fl.a + fl.c) / 2], text: fmtLenDown(m.d, gridSize), runLo: fl.a, runLen: fl.c - fl.a })
     }
   }

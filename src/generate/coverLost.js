@@ -10,7 +10,7 @@
 //     sided).
 // A slot's positions: the rack's positions (utils/capacity.js getRackCapacity, its levels) over its slots — the same
 // count the card and the BOM show. Each rack loses at most what it has. Pure.
-import { rackDrawOps } from '../render/rackOps'
+import { rackDrawOps, shelvingUnits } from '../render/rackOps'
 import { overlapMarks } from '../render/overlapOps'
 import { laneFaceGaps } from './laneFaces'
 import { getRackCapacity } from '../utils/capacity'
@@ -63,6 +63,8 @@ export function coverLost(objects, { gridSize = 40, profile = MHE_PROFILES.reach
     if (short.length) {
       if (r.type === 'rack_drive_through') faceShare = short.length >= 2 ? 1 : 0
       else if (r.type === 'rack_cantilever' && (r.doubleSided ?? true)) faceShare = short.length >= 2 ? 1 : 0.5
+      // (rack-round3) a shelving unit picked from both sides: lost only when both are short (one open still picks)
+      else if (r.type === 'rack_shelving' && faces.find(g => g.rackId === r.id)?.nSides === 2) faceShare = short.length >= 2 ? 1 : 0
       else faceShare = 1
     }
     const zoneN = Math.round(byZone.size * per), rackN = Math.round(byRack.size * per)
@@ -74,6 +76,47 @@ export function coverLost(objects, { gridSize = 40, profile = MHE_PROFILES.reach
     if (zoneN) out.list.push({ rackId: r.id, n: Math.min(zoneN, n), reason: 'zone' })
     if (rackN) out.list.push({ rackId: r.id, n: Math.min(rackN, n - Math.min(zoneN, n)), reason: 'overlap' })
     if (faceN && n - zoneN - rackN > 0) out.list.push({ rackId: r.id, n: n - Math.min(n, zoneN + rackN), reason: 'face' })
+  }
+  return out
+}
+
+/** (rack-round3 4) The positions a short face takes off, as world boxes [{ rackId, x, y, w, h }] — the slots to mark with
+ *  the overlap's red X (render/overlapOps.js overlapOps), in place of a red line on the face: coverLost's face share
+ *  (all of a drive-in, a push-back, a pallet flow, a shelving unit; a drive-through only with both ends short; a double-
+ *  sided cantilever the short side's half), less the slots a zone or an overlap marks already. A short face that loses
+ *  nothing (a drive-through with one end open) has no marks — its chip alone is red. `faces`: laneFaceGaps' (optional). */
+export function faceLostMarks(objects, { gridSize = 40, profile = MHE_PROFILES.reach, walkwayIn = 44, faces = null } = {}) {
+  const out = []
+  if (!Array.isArray(objects) || !profile) return out
+  const gaps = faces || laneFaceGaps(objects, { gridSize, profile, walkwayIn })
+  if (!gaps.length) return out
+  const by = new Map()
+  for (const g of gaps) { if (!by.has(g.rackId)) by.set(g.rackId, []); by.get(g.rackId).push(g) }
+  const zones = objects.filter(isZone)
+  let marks = null
+  for (const [id, gs] of by) {
+    const r = gs[0].rack
+    if (!isRack(r)) continue
+    const dbl = r.type === 'rack_cantilever' && (r.doubleSided ?? true)
+    if ((r.type === 'rack_drive_through' || (r.type === 'rack_shelving' && gs[0].nSides === 2)) && gs.length < 2) continue
+    let slots = slotBoxes(r, gridSize)
+    // a shelving unit draws no pallet slots: its units are its positions
+    if (!slots.length && r.type === 'rack_shelving' && !(((r.rotation || 0) % 180 + 180) % 180)) { const { n, uw } = shelvingUnits(r, gridSize); slots = Array.from({ length: n }, (_, i) => ({ x: r.x + i * uw, y: r.y, w: uw, h: r.height })) }
+    else if (!slots.length && r.type === 'rack_shelving') { const fp = rackFootprint(r); slots = [{ x: fp.x, y: fp.y, w: fp.w, h: fp.h }] }
+    if (!slots.length) continue
+    marks = marks || overlapMarks(objects, gridSize)
+    const mine = marks.filter(m => m.rackId === id)
+    const f = rackFootprint(r), cx = f.x + f.w / 2, cy = f.y + f.h / 2
+    // a double-sided cantilever with one side short: the slots on that side of its spine
+    const side = dbl && gs.length < 2 ? gs[0] : null
+    for (const q of slots) {
+      if (zones.some(z => meets(q, { x: z.x, y: z.y, w: z.width, h: z.height })) || mine.some(m => meets(q, m))) continue
+      if (side) {
+        const qc = side.isHoriz ? q.y + q.h / 2 : q.x + q.w / 2, mid = side.isHoriz ? cy : cx, at = side.isHoriz ? side.face.y1 : side.face.x1
+        if (Math.sign(qc - mid) !== Math.sign(at - mid)) continue
+      }
+      out.push({ rackId: id, x: q.x, y: q.y, w: q.w, h: q.h })
+    }
   }
   return out
 }

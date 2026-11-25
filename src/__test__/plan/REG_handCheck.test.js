@@ -10893,23 +10893,25 @@ describe('REG — the hand check by real clicks', () => {
     const r2View = async (c, z) => { await L.S('S.setState({ zoom: arg.z, panX: 560 - arg.c.x * arg.z, panY: 450 - arg.c.y * arg.z, selectedIds: [] })', { c, z }); await L.page.waitForTimeout(350) }
     const r2Card = async () => { const t = await L.page.locator('[data-island="right-card"]').innerText(); const m = /(\d[\d,]*)\s*positions\s*(\d[\d,]*)\s*usable/.exec(t.replace(/\s+/g, ' ')); return m ? { positions: +m[1].replace(/,/g, ''), usable: +m[2].replace(/,/g, '') } : null }
 
-    onceIt('REG-r2-face-aisle (click): (rack-round2 1) a drive-through with its top ENTRY against the wall shows red on that face and its 0″ chip (Check layout: "… ENTRY face has 0″ in front"); the drive-in facing clear floor shows nothing; dragged until its ENTRY faces the drive-through, the drive-in turns red while dragging and after the drop; the lane sides may touch', async () => {
+    onceIt('REG-r2-face-aisle (click): (rack-round2 1) a drive-through with its top ENTRY against the wall shows its 0″ chip in red — (rack-round3 4, was: a red line on that face) no line on the face; one end short it loses nothing, so no X marks; (rack-round3 2, was: an error) Check layout warns "… ENTRY face has 0″ in front … works as drive-in only"; the drive-in facing clear floor shows nothing; dragged until its ENTRY faces the drive-through, both chips show while dragging and after the drop; the lane sides may touch', async () => {
       await r2Lanes()
       const dt = await L.S('return S.getState().objects.find(o => o.id === "dt-wall")'), di = await L.S('return S.getState().objects.find(o => o.id === "di-clear")')
       await r2View({ x: dt.x + dt.width / 2, y: dt.y + dt.height / 2 }, 0.3)
       const reds = await r2Konva('.lane-face-short')
-      expect(reds.length).toBe(1)
+      expect(reds.length).toBe(0)                                   // (rack-round3 4) no red line on the face
       const chips = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find(n => /^lane-face:/.test(n.name())).map(g => g.name()) })
       expect(chips).toEqual(['lane-face:dt-wall:top'])
-      const check = await L.S('return LC.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40 }).errors.filter(e => e.kind === "aisle-face").map(e => e.text)')
-      expect(check.length).toBe(1); expect(check[0]).toMatch(/ENTRY face has 0/)
+      expect(await r2Konva('.lane-faces')).toEqual([])              // one end open: nothing lost, no X marks
+      const check = await L.S('const r = LC.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40 }); return [...r.errors, ...r.warnings].filter(e => e.kind === "aisle-face").map(e => e.severity + ":" + e.text)')
+      expect(check.length).toBe(1); expect(check[0]).toMatch(/^warning:.*ENTRY face has 0.*works as drive-in only$/)
       // the drive-in dragged until its bottom ENTRY is 4 ft above the drive-through's top: red while dragging and after
       await r2View({ x: (dt.x + di.x) / 2, y: (dt.y + di.y) / 2 }, 0.15)
       const a = await L.toScreen({ x: di.x + di.width / 2, y: di.y + di.height / 2 })
       const want = { x: dt.x + dt.width / 2, y: dt.y + dt.height + 160 + di.height / 2 }   // its top 4 ft below the drive-through's bottom
       const b = await L.toScreen(want)
       const up = await r2Drag(a, b)
-      const during = await L.page.evaluate(() => window.Konva.stages[0].find('.lane-face-short').length)
+      // (rack-round3 4) the short faces' chips (red), no line
+      const during = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('.lane-face-short').length ? -1 : st.find(n => /^lane-face:/.test(n.name())).length })
       await up()
       const after = await L.S('return import("/src/generate/laneFaces.js").then(M => M.laneFaceGaps(S.getState().objects, { gridSize: 40 }).map(g => g.rackId + ":" + g.side).sort())')
       // the drive-through's bottom ENTRY now faces the drive-in 4 ft away: short, red — on the way and after (the drive-in's
@@ -11129,6 +11131,168 @@ describe('REG — the hand check by real clicks', () => {
         if (!chip) continue   // under its reading size at this zoom (Rule 8)
         expect([z, chip.x + chip.w <= rk.x0 + 1 || chip.x >= rk.x1 - 1, chip.y + 1 >= rk.y0]).toEqual([z, true, true])
       }
+    }, 2 * T)
+
+    /* ── rack-round3 (docs/reports/rack-round3.md) ── */
+    const r3Open = async (name) => { const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, B.fixture(name)); return L }
+    const r3Lines = () => L.S('return import("/src/utils/rackLines.js").then(R => R.rackLinesNow(S.getState().objects, S.getState().gridSize || 40).map(l => l.no + ":" + l.ids.join(",") + ":" + l.ws))')
+    const r3Obj = (id) => L.S('return S.getState().objects.find(o => o.id === arg) || null', id)
+    const r3Hist = () => L.S('return S.getState().historyIndex')
+
+    onceIt('REG-r3-cross-aisle (click): (rack-round3 1) a drive-in standing in a cross-aisle between beam racks does not split their line — the beam numbers are those of the same layout without it (R1–R11, not R1–R13); selected by a click and deleted: the beam lines do not change; Ctrl+Z puts it back, still unchanged', async () => {
+      await r3Open('older-horizontal'); const base = await r3Lines()
+      await r3Open('crossaisle-drivein')
+      expect(await r3Lines()).toEqual(base)
+      const di = await r3Obj('di-cross')
+      await r2View({ x: di.x + di.width / 2, y: di.y + di.height / 2 }, 0.3)
+      const labels = (await r2Konva('.rack-line-label')).map(t => t.text)
+      expect(labels).toContain('D1'); expect(labels.filter(t => /^R\d+$/.test(t)).every(t => +t.slice(1) <= 11)).toBe(true)
+      await L.click({ x: di.x + di.width / 2, y: di.y + di.height * 0.4 }); await L.page.waitForTimeout(250)
+      expect(await L.S('return S.getState().selectedIds')).toEqual(['di-cross'])
+      await L.page.keyboard.press('Delete'); await L.page.waitForTimeout(350)
+      expect([await r3Obj('di-cross'), await r3Lines()]).toEqual([null, base])
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(350)
+      expect([!!(await r3Obj('di-cross')), await r3Lines()]).toEqual([true, base])
+    }, 2 * T)
+
+    onceIt('REG-r3-drive-in-only (click): (rack-round3 2) a drive-through with one ENTRY against the wall keeps its positions (card usable unchanged) and the Check card says "works as drive-in only" — a warning, not an error', async () => {
+      await r3Open('lanes-horizontal')
+      expect(await r2Card()).toEqual({ positions: 80, usable: 80 })
+      await L.page.locator('[data-island="top-right"]').getByRole('button', { name: 'Check' }).click(); await L.page.waitForTimeout(500)
+      const card = (await L.page.locator('[data-island="right-card"]').innerText()).replace(/\s+/g, ' ')
+      expect(card).toMatch(/ENTRY face has 0.{0,80}works as drive-in only/)
+      const sev = await L.S('const r = LC.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40 }); return { e: r.errors.filter(x => x.kind === "aisle-face").length, w: r.warnings.filter(x => x.kind === "aisle-face").length }')
+      expect(sev).toEqual({ e: 0, w: 1 })
+    }, 2 * T)
+
+    onceIt('REG-r3-lanes (click): (rack-round3 3) a zone over one lane of a 4-lane drive-in: a click on the zone, its bar "Covers D1", Remove racks — the drive-in keeps 3 lanes exactly where they stood (same left edge, same lane width), the zone covers nothing, one undo step; Ctrl+Z puts the 4 lanes back', async () => {
+      await r3Open('zone-lane')
+      const d0 = await r3Obj('di-4'), z = await r3Obj('zone-lane')
+      await r2View({ x: d0.x + d0.width / 2, y: d0.y + d0.height / 2 }, 0.3)
+      await L.click({ x: z.x + z.width - 40, y: z.y + 40 }); await L.page.waitForTimeout(300)
+      const bar = L.page.locator('[data-selection-bar]')
+      expect(await bar.locator('[data-zone-covers]').innerText()).toMatch(/^Covers D1/)
+      const h0 = await r3Hist()
+      await bar.getByRole('button', { name: 'Remove racks' }).click(); await L.page.waitForTimeout(500)
+      const racks = await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => ({ id: o.id, lanes: o.lanes, x: Math.round(o.x), y: Math.round(o.y), w: Math.round(o.width), h: Math.round(o.height) }))')
+      const lw = (r, n) => (r.width - (n + 1) * (4 / 12) * 40) / n
+      expect(racks.length).toBe(1)
+      expect([racks[0].lanes, racks[0].x, racks[0].y, racks[0].h, Math.round(lw({ width: racks[0].w }, 3))]).toEqual([3, Math.round(d0.x), Math.round(d0.y), Math.round(d0.height), Math.round(lw(d0, 4))])
+      expect(await L.S('return import("/src/render/overlapOps.js").then(M => M.zoneCoverPairs(S.getState().objects).length)')).toBe(0)
+      expect((await r3Hist()) - h0).toBe(1)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      expect(await L.S('return S.getState().objects.filter(o => /^rack_/.test(o.type)).map(o => o.lanes)')).toEqual([4])
+    }, 2 * T)
+
+    onceIt('REG-r3-face-x (click): (rack-round3 4) no red line on any short face; a short face that loses positions marks each lost slot with the overlap\'s red X (1.5 px, inside the slot) and its chip is red; one that loses none (the drive-through, one end open): the red chip alone; the drive-in dragged clear of the zone and the face: no X, no chip; one undo', async () => {
+      await r3Open('zone-lane')
+      const d0 = await r3Obj('di-4')
+      await r2View({ x: d0.x + d0.width / 2, y: d0.y + d0.height / 2 }, 0.3)
+      expect(await r2Konva('.lane-face-short')).toEqual([])
+      const marks = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const g = st.findOne('.lane-faces'); return g ? g.find('Line').map(l => ({ sw: l.strokeWidth() * st.scaleX(), stroke: l.stroke() })) : [] })
+      expect(marks.length / 2).toBe(15)                              // 20 slots, the zone's lane (5) X'd by the zone already
+      expect(marks.every(m => Math.abs(m.sw - 1.5) < 0.2 && m.stroke === '#C0392B')).toBe(true)
+      // its chip red: the level-1 look (labelOps AISLE_LOOK[1] — the pink pill)
+      const red = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); const g = st.findOne(n => /^lane-face:di-4:/.test(n.name())); return !!g && g.find(n => typeof n.fill === 'function' && /254,\s*226,\s*226/.test(String(n.fill()))).length > 0 })
+      expect(red).toBe(true)
+      // dragged 30 ft left and up, clear of the zone: no X, no chip
+      const a = await L.toScreen({ x: d0.x + d0.width * 0.3, y: d0.y + d0.height * 0.4 })
+      await r2View({ x: d0.x, y: d0.y }, 0.15)
+      const a2 = await L.toScreen({ x: d0.x + d0.width * 0.3, y: d0.y + d0.height * 0.4 }), b2 = await L.toScreen({ x: d0.x + d0.width * 0.3 - 1200, y: d0.y + d0.height * 0.4 - 200 })
+      void a
+      const h0 = await r3Hist()
+      const up = await r2Drag(a2, b2); await up()
+      expect([(await r2Konva('.lane-faces')).length, await L.page.evaluate(() => window.Konva.stages[0].find(n => /^lane-face:/.test(n.name())).length), (await r3Hist()) - h0]).toEqual([0, 0, 1])
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      expect(Math.round((await r3Obj('di-4')).x)).toBe(Math.round(d0.x))
+      // the drive-through with one end at the wall: its chip, no X
+      await r3Open('lanes-horizontal')
+      const dt = await r3Obj('dt-wall')
+      await r2View({ x: dt.x + dt.width / 2, y: dt.y + dt.height / 2 }, 0.3)
+      expect([(await r2Konva('.lane-faces')).length, (await r2Konva('.lane-face-short')).length, await L.page.evaluate(() => window.Konva.stages[0].find(n => /^lane-face:dt-wall:top$/.test(n.name())).length)]).toEqual([0, 0, 1])
+    }, 2 * T)
+
+    onceIt('REG-r3-wall-numbers (click): (rack-round3 5) a rack along each wall (a drive-in north, a push-back south, a shelving run west, a cantilever east): at 10, 15 and 30 % each number sits outside the building, just past that wall, beside the rack (centred on it along the wall, or slid along off a face word), never on a wall or another label; the shelving dragged into the middle: its number goes back inside; Ctrl+Z: outside again', async () => {
+      await r3Open('walls-racks')
+      const fp = await fpOf()
+      const where = () => L.S(`const st = S.getState(), f = st.objects.find(o => /^fp_/.test(o.type)), t = (f.wallThicknessFt || 0.25) * 40, stg = window.Konva.stages[0]; stg.draw()
+        const box = (n) => { const r = n.getClientRect(); return { x: (r.x - st.panX) / st.zoom, y: (r.y - st.panY) / st.zoom, w: r.width / st.zoom, h: r.height / st.zoom } }
+        return stg.find('.rack-line-label').filter(n => n.isVisible()).map(n => { const b = box(n)
+          const out = b.x + b.w < f.x - 0.5 ? 'W' : b.x > f.x + f.width + 0.5 ? 'E' : b.y + b.h < f.y - 0.5 ? 'N' : b.y > f.y + f.height + 0.5 ? 'S' : 'in'
+          return { t: n.text(), out, b } })`)
+      const want = { D1: 'N', P1: 'S', S1: 'W', C1: 'E' }
+      for (const z of [0.1, 0.15, 0.3]) {
+        await r2View({ x: fp.x + fp.width / 2, y: fp.y + fp.height / 2 }, z)
+        const w = await where()
+        expect([z, Object.fromEntries(w.map(q => [q.t, q.out]))]).toEqual([z, want])
+        for (const q of w) for (const p of w) if (p !== q) expect([z, q.t, p.t, r2Meet(q.b, p.b)]).toEqual([z, q.t, p.t, false])
+        // beside its own rack: within one rack length along the wall
+        for (const q of w) {
+          const id = { D1: 'w-north', P1: 'w-south', S1: 'w-west', C1: 'w-east' }[q.t], o = await r3Obj(id)
+          const along = q.out === 'N' || q.out === 'S' ? Math.abs(q.b.x + q.b.w / 2 - (o.x + o.width / 2)) <= Math.max(o.width, 200) : Math.abs(q.b.y + q.b.h / 2 - (o.y + o.height / 2)) <= Math.max(o.height, 200)
+          expect([z, q.t, along]).toEqual([z, q.t, true])
+        }
+      }
+      // the shelving run dragged into the middle of the building: its number inside (the view on both ends of the drag)
+      await r2View({ x: fp.x + fp.width * 0.25, y: fp.y + fp.height / 2 }, 0.1)
+      const s = await r3Obj('w-west')
+      const a = await L.toScreen({ x: s.x + s.width * 0.6, y: s.y + s.height / 2 }), b = await L.toScreen({ x: fp.x + fp.width * 0.4, y: fp.y + fp.height * 0.45 })
+      const up = await r2Drag(a, b); await up()
+      expect(Object.fromEntries((await where()).map(q => [q.t, q.out])).S1).toBe('in')
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
+      expect(Object.fromEntries((await where()).map(q => [q.t, q.out])).S1).toBe('W')
+    }, 2 * T)
+
+    onceIt('REG-r3-shelving (click): (rack-round3 6) a shelving run: no shelf count drawn inside its units; clicked, its card reads "S1 · 4 units · 48×24 · 5 shelves" and so does its label on the plan; Unit width opens its list attached to the field (36 42 48 Custom) — 36 picked: 4 units 36 in wide (one undo); Depth Custom, 30 typed: 30 in deep, marked Custom; a run saved before (10 ft, no unit width) loads at exactly its size, shown as Custom', async () => {
+      await r3Open('walls-racks')
+      const s0 = await r3Obj('w-west')
+      await r2View({ x: s0.x + s0.width / 2, y: s0.y + s0.height / 2 }, 0.3)
+      // nothing drawn inside the units: no text on the rack
+      const inside = await L.page.evaluate((b) => { const st = window.Konva.stages[0]; st.draw(); return st.find('Text').filter(t => t.isVisible()).map(t => t.getClientRect()).filter(r => r.x >= b.x0 && r.x + r.width <= b.x1 && r.y >= b.y0 && r.y + r.height <= b.y1).length },
+        await L.S('const st = S.getState(); return { x0: arg.x * st.zoom + st.panX, x1: (arg.x + arg.width) * st.zoom + st.panX, y0: arg.y * st.zoom + st.panY, y1: (arg.y + arg.height) * st.zoom + st.panY }', s0))
+      expect(inside).toBe(0)
+      await L.click({ x: s0.x + s0.width * 0.6, y: s0.y + s0.height / 2 }); await L.page.waitForTimeout(350)
+      const card = L.page.locator('[data-island="right-card"]')
+      expect((await card.innerText()).replace(/\s+/g, ' ')).toContain('S1 · 4 units · 48×24 · 5 shelves')
+      const pills = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('Text').filter(t => t.isVisible()).map(t => t.text()) })
+      expect(pills.some(t => t === 'S1 · 4 units · 48×24 · 5 shelves')).toBe(true)
+      // Unit width: its list attached to the field; 36
+      const field = card.getByRole('combobox', { name: 'Unit width (in)' })
+      await card.getByRole('button', { name: 'Unit width (in) sizes' }).click(); await L.page.waitForTimeout(200)
+      const list = L.page.getByRole('listbox', { name: 'Unit width (in) sizes' })
+      expect(await list.getByRole('option').allInnerTexts()).toEqual(['36', '42', '48', 'Custom'])
+      const fb = await field.boundingBox(), lb = await list.boundingBox()
+      expect([Math.abs(lb.x - fb.x) <= 2, Math.abs(lb.y - (fb.y + fb.height)) <= 6 || Math.abs(lb.y + lb.height - fb.y) <= 6]).toEqual([true, true])
+      const h0 = await r3Hist()
+      await list.getByRole('option', { name: '36' }).click(); await L.page.waitForTimeout(300)
+      const s1 = await r3Obj('w-west')
+      expect([s1.unitWidthIn, Math.round(s1.width), Math.round(s1.x), (await r3Hist()) - h0]).toEqual([36, Math.round(4 * 3 * 40), Math.round(s0.x), 1])
+      expect((await card.innerText()).replace(/\s+/g, ' ')).toContain('S1 · 4 units · 36×24 · 5 shelves')
+      // Depth: Custom, 30
+      await card.getByRole('button', { name: 'Depth (in) sizes' }).click(); await L.page.waitForTimeout(200)
+      await L.page.getByRole('listbox', { name: 'Depth (in) sizes' }).getByRole('option', { name: 'Custom' }).click(); await L.page.waitForTimeout(150)
+      await L.page.keyboard.type('30'); await L.page.keyboard.press('Enter'); await L.page.waitForTimeout(300)
+      expect(Math.round((await r3Obj('w-west')).height)).toBe(100)
+      expect((await card.innerText()).replace(/\s+/g, ' ')).toMatch(/36×30/)
+      expect(await card.locator('[data-custom-size]').count()).toBe(1)
+      // out of the field (a Ctrl+Z in it would be the field's own), then undo
+      await L.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur()); await L.page.waitForTimeout(100)
+      await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      expect(Math.round((await r3Obj('w-west')).height)).toBe(80)
+      // a run saved before the unit width existed: 10 ft, no unitWidthIn — loads at exactly its size, Custom
+      const old = { ...s0, id: 'old-shelf', unitWidthIn: undefined, x: s0.x + 1200, width: 400 }
+      delete old.unitWidthIn
+      await L.S('S.setState({ objects: [...S.getState().objects, arg] })', old)
+      const json = await L.S('return SL.serializeScene(S.getState())')
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, json)
+      const o2 = await r3Obj('old-shelf')
+      expect([o2.width, o2.height, o2.x, o2.unitWidthIn]).toEqual([400, old.height, old.x, undefined])
+      await r2View({ x: o2.x + o2.width / 2, y: o2.y + o2.height / 2 }, 0.3)
+      await L.click({ x: o2.x + o2.width * 0.6, y: o2.y + o2.height / 2 }); await L.page.waitForTimeout(350)
+      const t2 = (await L.page.locator('[data-island="right-card"]').innerText()).replace(/\s+/g, ' ')
+      expect(t2).toMatch(/S2 · 3 units · 40×24 · 5 shelves/)   // split as it was always drawn: about 4 ft units, 10 ft = 3 × 40 in
+      expect(await L.page.locator('[data-island="right-card"] [data-custom-size]').count()).toBe(1)
+      expect((await r3Obj('old-shelf')).width).toBe(400)
     }, 2 * T)
   })
 })

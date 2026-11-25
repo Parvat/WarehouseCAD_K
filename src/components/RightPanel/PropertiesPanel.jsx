@@ -14,6 +14,8 @@ import { rememberStylesOf } from '../../utils/drawStyles'
 import { WidthPick } from '../../studio/drawnBar'
 import { Swatch } from '../../studio/Swatch'
 import { SizeInput } from '../../studio/textSizeCard'
+import { shelvingLabel, shelvingTag, shelvesOf, isStandard, SHELF_UNIT_IN, SHELF_DEPTH_IN, unitWidthChange, unitCountChange, depthChange } from '../../utils/shelving'   // (rack-round3 6)
+import { shelvingUnits } from '../../render/rackOps'
 import { nanoid as newIdForZone } from 'nanoid'
 
 /** (dealer audit; d1-final, the mockups' cards) A drawn shape's style after drawing — the Draw bar's own controls:
@@ -507,7 +509,7 @@ export function PropertiesPanel() {
   const bayLabel = obj.activeBayIdx != null ? `Bay ${obj.activeBayIdx + 1}` : obj.activeTowerIdx != null ? `Tower ${obj.activeTowerIdx + 1}` : null
   return (
     <>
-      <Head caption={bayLabel ? `${typeName(obj)} · ${bayLabel}` : typeName(obj)} right={<CardLock obj={obj} />} />
+      <Head caption={obj.type === 'rack_shelving' ? shelvingLabel(obj, gridSize, shelvingTag(objects, obj, gridSize, useCanvasStore.getState().elevations)) : bayLabel ? `${typeName(obj)} · ${bayLabel}` : typeName(obj)} right={<CardLock obj={obj} />} />
       <LockedFields locked={locked}><MultiBayPanel /></LockedFields>
       <Sec>
         <LockedFields locked={locked}>
@@ -523,7 +525,8 @@ export function PropertiesPanel() {
         {obj.type?.startsWith('fp_') && <TextSizeField objs={[obj]} type="building" bare />}
         {/* (basics-fixes) an object with a box and no size field of its own (the Ops and Safety items, a column / pillar, a
             partition wall, a window, a mezzanine, a shelving unit): its Width and Depth, typed in feet — one undo each */}
-        {hasOwnSizeBlock(obj) && <SizeBlock obj={obj} gridSize={gridSize} />}
+        {/* (rack-round3 6) a shelving unit: Units, Unit width and Depth (dropdowns of the standard sizes, Custom), Shelves */}
+        {obj.type === 'rack_shelving' ? <ShelvingFields obj={obj} gridSize={gridSize} /> : hasOwnSizeBlock(obj) && <SizeBlock obj={obj} gridSize={gridSize} />}
         {/* (dealer audit) a drawn shape: its size in feet, then its style — the Draw bar's controls */}
         {isDrawn(obj) && <DrawnSizeFields obj={obj} gridSize={gridSize} />}
         {isDrawn(obj) && <DrawnStyleFields obj={obj} />}
@@ -633,6 +636,31 @@ function SizeBlock({ obj, gridSize }) {
       <Field label={wall ? 'Length (ft)' : 'Width (ft)'}><NumInput aria={wall ? 'Length (ft)' : 'Width (ft)'} value={ft(obj.width)} min={0.1} step={0.5} onCommit={v => { if (v > 0) set({ width: v * gridSize }) }} /></Field>
       <Field label={wall ? 'Thickness (ft)' : 'Depth (ft)'}><NumInput aria={wall ? 'Thickness (ft)' : 'Depth (ft)'} value={ft(obj.height)} min={0.05} step={0.25} onCommit={v => { if (v > 0) set({ height: v * gridSize }) }} /></Field>
     </Grid2>
+  )
+}
+
+/* ─── (rack-round3 6) a shelving unit ─────────────────────────────────────── */
+/** Units (count), Unit width (36 · 42 · 48, Custom) and Depth (12 · 18 · 24, Custom) in inches, Shelves — one undo each;
+ *  its left-top corner held. A size that is not a standard one (a unit saved before) shows as it is, marked Custom. */
+function ShelvingFields({ obj, gridSize }) {
+  const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
+  const { n, unitIn, depthIn } = shelvingUnits(obj, gridSize)
+  const tag = (v, list) => (isStandard(v, list) ? null : <span data-custom-size style={{ fontSize: 11, color: C.faint, marginLeft: 6 }}>Custom</span>)
+  return (
+    <div data-shelving-fields style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <Grid2>
+        <Field label="Units"><NumInput aria="Units" value={n} min={1} step={1} onCommit={v => { if (v >= 1) set(unitCountChange(obj, v, gridSize)) }} /></Field>
+        <Field label="Shelves"><NumInput aria="Shelves" value={shelvesOf(obj)} min={1} step={1} onCommit={v => { if (v >= 1) set({ shelves: Math.round(v) }) }} /></Field>
+      </Grid2>
+      <Grid2>
+        <Field label={<span style={{ display: 'flex', alignItems: 'center' }}>Unit width (in){tag(unitIn, SHELF_UNIT_IN)}</span>}>
+          <SizeInput inches={unitIn} aria="Unit width (in)" options={SHELF_UNIT_IN} custom onCommit={v => { if (v > 0) set(unitWidthChange(obj, v, gridSize)) }} />
+        </Field>
+        <Field label={<span style={{ display: 'flex', alignItems: 'center' }}>Depth (in){tag(depthIn, SHELF_DEPTH_IN)}</span>}>
+          <SizeInput inches={depthIn} aria="Depth (in)" options={SHELF_DEPTH_IN} custom onCommit={v => { if (v > 0) set(depthChange(v, gridSize)) }} />
+        </Field>
+      </Grid2>
+    </div>
   )
 }
 

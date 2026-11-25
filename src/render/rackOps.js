@@ -420,19 +420,27 @@ export function rackMezzanineOps(obj, gridSize) {
   return ops
 }
 
-/** SHELVING — hand-picked units: each unit's outline (about 4 ft wide, the run split evenly) with its shelf count
- *  inside, in the family colour. */
+/** (rack-round3 6) A shelving run's units: its unit width (`unitWidthIn`, inches — 36, 42 or 48, or any typed), the run
+ *  split into whole units of it; a unit saved before the field existed: about 4 ft, the run split evenly (exactly as it
+ *  was drawn — nothing resizes on load). → { n, uw (world px), unitIn, depthIn } */
+export const SHELF_UNIT_IN = [36, 42, 48], SHELF_DEPTH_IN = [12, 18, 24]
+export function shelvingUnits(obj, gridSize = 40) {
+  const w = obj.width || 0, own = obj.unitWidthIn > 0 ? (obj.unitWidthIn / 12) * gridSize : 0
+  const n = Math.max(1, Math.round(w / (own || 4 * gridSize))), uw = w / n
+  const r2 = (v) => Math.round(v * 100) / 100
+  return { n, uw, unitIn: r2((uw / gridSize) * 12), depthIn: r2(((obj.height || 0) / gridSize) * 12) }
+}
+/** SHELVING — hand-picked units: each unit's outline, in the family colour. (rack-round3 6: no shelf count drawn inside —
+ *  the size label carries it: "S1 · 4 units · 48×24 · 5 shelves".) */
 export function rackShelvingOps(obj, gridSize) {
   const { x, y, width: w, height: h } = obj
   const c = colorsOf(obj)
-  const n = Math.max(1, Math.round(w / (4 * gridSize))), uw = w / n
+  const { n, uw } = shelvingUnits(obj, gridSize)
   const ops = [body(x, y, w, h, c.line)]
   const segs = []
   for (let i = 1; i < n; i++) segs.push(x + i * uw, y, x + i * uw, y + h)
   const lo = linesOp(segs, c.line, RACK_LINE.hair, { name: 'shelf-units' })
   if (lo) ops.push(lo)
-  const s = Math.min(h * 0.55, inch(13, gridSize)), shelves = Math.max(1, Math.round(obj.shelves || 5))
-  if (s > 0) for (let i = 0; i < n; i++) ops.push({ op: 'text', x: x + (i + 0.5) * uw, y: y + (h - s) / 2, size: s, text: String(shelves), color: c.line })
   return ops
 }
 

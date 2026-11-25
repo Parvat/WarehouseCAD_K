@@ -17,7 +17,7 @@
 // zones before gave) keeps the edit: its pieces become their own bases and only the footprint is taken off them.
 
 import { BEAM_TYPES } from './rackTypes'
-import { uprightXs } from '../render/rackOps'
+import { uprightXs, laneGeom } from '../render/rackOps'
 import { piecesFromStates } from '../generate/faceReach'
 import { splitRackForBayDelete } from './baySplit'
 import { rebuildAisles } from './aisleRebuild'
@@ -63,6 +63,7 @@ const worldBox = (T, x0, y0, x1, y1) => {
 export function cutRack(base, zones, { gridSize = 40, newId }) {
   if (!zones.length || !(base.width > 0) || !overlapsAny(footBox(base), zones)) return [base]
   const rot = (((base.rotation || 0) % 360) + 360) % 360
+  if (LANE_TYPES.has(base.type) && rot % 90 === 0) return cutLanes(base, zones, { gridSize, newId })
   if (!BEAM.has(base.type) || rot % 90 !== 0 || !Array.isArray(base.beams)) {
     // any other rack: whole bays the zone touches (bay-split keeps the rest exactly where it was)
     const { xs, upW } = uprightXs(base, gridSize), T = toWorld(base)
@@ -87,6 +88,26 @@ export function cutRack(base, zones, { gridSize = 40, newId }) {
   return pieces.filter(p => (p.beams?.length ?? 0) >= MIN_PIECE_BAYS || !overlapsAny(footBox(p), reach))
 }
 const overlapsAny = (b, zones) => zones.some(z => overlaps(b, z))
+
+/* (rack-round3 3) A lane rack (drive-in, drive-through, push-back, pallet flow) loses only the LANES a zone covers, as a
+   beam rack loses only its covered bays: each run of lanes left is a rack of its own, the same lane width, depth, uprights
+   and turn, standing exactly where those lanes stood (the first keeps the id). No lane left: none (the rack goes). */
+export const LANE_TYPES = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow'])
+function cutLanes(base, zones, { gridSize, newId }) {
+  const { lanes, upW, laneW, postXs } = laneGeom(base, gridSize), T = toWorld(base)
+  const gone = Array.from({ length: lanes }, (_, i) => overlapsAny(worldBox(T, postXs[i] + upW, base.y, postXs[i + 1], base.y + base.height), zones))
+  if (!gone.some(Boolean)) return [base]
+  if (gone.every(Boolean)) return []
+  const runs = []
+  for (let i = 0; i < lanes; i++) if (!gone[i]) { const last = runs[runs.length - 1]; if (last && last.b === i - 1) last.b = i; else runs.push({ a: i, b: i }) }
+  const cx = base.x + base.width / 2, cy = base.y + base.height / 2
+  return runs.map((run, k) => {
+    const n = run.b - run.a + 1, w = n * laneW + (n + 1) * upW, lx = postXs[run.a] + w / 2   // its middle, unturned
+    const c = T(lx, cy), id = k === 0 ? base.id : newId()
+    void cx
+    return { ...base, id, lanes: n, width: w, x: c.x - w / 2, y: c.y - base.height / 2 }
+  })
+}
 
 /**
  * The layout with every rack cut for the zones as they are now — each cut rack worked out again from its base.

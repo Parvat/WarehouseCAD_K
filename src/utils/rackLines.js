@@ -72,7 +72,9 @@ export function rackLinesOf(objects, gridSize = 40) {
   for (let i = 0; i < racks.length; i++) for (let j = i + 1; j < racks.length; j++) if (inLine(racks[i], racks[j], gridSize)) parent.set(find(racks[i].id), find(racks[j].id))
   // a row line cut by cross-aisles: one line (fixes-x)
   // (only inside one drawn section: a line in two sections is two lines, each numbered with its own section)
-  const all = objects.filter(o => typeof o?.type === 'string' && o.type.startsWith('rack_') && o.width > 0 && o.height > 0)
+  // (rack-round3 1) only a BEAM rack standing in the gap splits the line: a drive-in, a shelving unit … in a cross-aisle
+  // never changes the beam numbers (was: any rack)
+  const all = objects.filter(o => typeof o?.type === 'string' && BEAM.has(o.type) && o.width > 0 && o.height > 0)
   const secPolys = objects.filter(isSection).map(polygonOf)
   const secOf = new Map(racks.map(o => { const f = rackFootprint(o), x = f.x + f.w / 2, y = f.y + f.h / 2; return [o.id, secPolys.findIndex(q => pointInPolygon(q, x, y))] }))
   for (let i = 0; i < racks.length; i++) for (let j = i + 1; j < racks.length; j++) if (find(racks[i].id) !== find(racks[j].id) && secOf.get(racks[i].id) === secOf.get(racks[j].id) && acrossGap(racks[i], racks[j], all)) parent.set(find(racks[i].id), find(racks[j].id))

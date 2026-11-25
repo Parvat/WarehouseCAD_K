@@ -11,6 +11,20 @@ Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
 3. **Text drag:** fix it now (a text dragged on its own moves only down, and less than the mouse). This is item 6 of the
    next prompt.
 4. **Lanes:** keep real sizes (46″). The mockup showed the style only.
+
+**PP's answers to the rack-round2 questions (2026-11-25), built in rack-round3:**
+1. **Shelving pick side:** a side not backed by a wall or a rack within 2 ft. If both sides are open, both are checked.
+   (Already built in rack-round2; kept.)
+2. **A non-beam rack in a cross-aisle** does not split the beam line. Beam numbers never change because of a non-beam
+   rack. A beam rack in a cross-aisle keeps today's behaviour. (rack-round3 item 1.)
+3. **A drive-through with one short end** keeps its positions. Check layout says "works as drive-in only". (Item 2.)
+4. **Remove racks on lane racks** (drive-in, drive-through, push-back, pallet flow) removes only the covered lanes, like
+   covered bays on a beam rack; the whole rack only when no lane is left. One undo. (Item 3.)
+
+**rack-round3** (branch, from rack-round2 — it carries round 2 too): those three answers, a short face marked by X marks
+on its lost positions and a red chip (no red line), a non-beam rack's number outside the building when it stands within
+2 ft of a wall, shelving sizes (unit 36 / 42 / 48 in, depth 12 / 18 / 24 in, Custom; no shelf count drawn; the label
+"S1 · 4 units · 48×24 · 5 shelves"). Report: [reports/rack-round3.md](reports/rack-round3.md).
 Read this first, then [EPICS.md](EPICS.md) (the plan), [FEATURES.md](FEATURES.md) (every feature and its status),
 CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
 
