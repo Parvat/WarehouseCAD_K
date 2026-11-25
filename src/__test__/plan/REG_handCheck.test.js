@@ -11435,5 +11435,48 @@ describe('REG — the hand check by real clicks', () => {
       expect(typeof pdf === 'string' ? pdf.length > 1000 : !!pdf).toBe(true)
       void fp
     }, 3 * T)
+
+    onceIt('REG-r4-push-back (click): (r4-push-back) a push-back placed from the library has the engine\'s defaults (3 lanes × 4 deep × 3 levels, first beam at the floor) and the tool goes back to Select; its card reads "P1 · 3 lanes × 4 deep × 3 levels · 36 PAL"; Deep typed 9 stops at 6 (one undo), the depth handle stops at 2; Lanes typed and the lane handle add lanes from the anchored corner; its LOAD · PICK face keeps the face check; the BOM has a Push-back racking section under P1, P2 (carts = (deep − 1) × lanes × levels); save and reload keep it', async () => {
+      await lnOpen('lane-push')
+      const p1 = await lnObj('lane-1')
+      await lnView(p1)
+      const placed = await lnPlace('Push-back', { x: p1.x + p1.width / 2, y: p1.y + p1.height + 500 })
+      expect(placed && [placed.type, placed.lanes, placed.palletDeep, placed.levels, placed.firstIn, Math.round(placed.width / 40 * 12), Math.round(placed.height / 40 * 12)]).toEqual(['rack_pushback', 3, 4, 3, 0, 150, 208])
+      expect(await L.S('return S.getState().activeTool')).toBe('select')
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      await lnView(p1); await lnSelect(p1)
+      expect(await lnText()).toContain('P1 · 3 lanes × 4 deep × 3 levels · 36 PAL')
+      expect(await lnText()).toContain('First beam (in)')
+      // Deep 9 → 6 (2 to 6), one undo
+      let h0 = await lnHist()
+      await lnType('Deep (pallets)', 9)
+      let o = await lnObj('lane-1')
+      expect([o.palletDeep, Math.round(o.height / 40 * 12), Math.round(o.y), (await lnHist()) - h0]).toEqual([6, 6 * 52, Math.round(p1.y), 1])
+      await lnBlurUndo(); expect((await lnObj('lane-1')).palletDeep).toBe(4)
+      // the depth handle dragged up past 2: stops at 2
+      await lnSelect(p1)
+      await lnHandle('lane-1', 'bc', 0, -(52 / 12) * 40 * 4)
+      expect((await lnObj('lane-1')).palletDeep).toBe(2)
+      await lnBlurUndo()
+      // a lane by the handle, the left edge kept
+      await lnSelect(p1)
+      await lnHandle('lane-1', 'mr', (49 / 12) * 40, 0)
+      o = await lnObj('lane-1')
+      expect([o.lanes, Math.round(o.x)]).toEqual([4, Math.round(p1.x)])
+      await lnBlurUndo()
+      // its face: LOAD · PICK (the face check reads it as before)
+      expect(await L.S('return import("/src/generate/laneFaces.js").then(M => [M.facesOf(arg), M.FACE_WORD.rack_pushback.bottom])', p1)).toEqual([['bottom'], 'LOAD · PICK'])
+      // the BOM
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      const st = (await L.page.locator('[data-bom-card="rack_pushback"]').innerText()).replace(/\s+/g, ' ')
+      expect(st).toMatch(/^Push-back racking P1, P2 /)
+      for (const part of ['Frame', 'Beam', 'Rail set', 'Cart', 'Entry guide']) expect([part, st.includes(part)]).toEqual([part, true])
+      expect(st).toMatch(/Cart 54( |$)/)                          // 2 racks × (4 − 1) × 3 × 3
+      await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
+      const before = await lnObj('lane-1')
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, await L.S('return SL.serializeScene(S.getState())'))
+      const after = await lnObj('lane-1')
+      expect(['lanes', 'palletDeep', 'levels', 'firstIn', 'width', 'height', 'x', 'y'].map(k => after[k])).toEqual(['lanes', 'palletDeep', 'levels', 'firstIn', 'width', 'height', 'x', 'y'].map(k => before[k]))
+    }, 3 * T)
   })
 })

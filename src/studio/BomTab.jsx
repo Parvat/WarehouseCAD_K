@@ -161,7 +161,7 @@ function PartLines({ g, picked, onPick }) {
             style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0, padding: '5px 8px', border: 0, borderRadius: 6, background: on ? C.select + '55' : 'transparent', color: C.text, fontSize: 12, textAlign: 'left', cursor: 'pointer' }}>
             <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
             <span style={{ fontFamily: MONO, color: C.strong, whiteSpace: 'nowrap' }}>
-              {n(l.qty)}{l.part === 'Beam' && <span style={{ color: C.muted }}> ({n(l.pairs)} pr)</span>}
+              {n(l.qty)}{l.part === 'Beam' && l.pairs != null && <span style={{ color: C.muted }}> ({n(l.pairs)} pr)</span>}
             </span>
           </button>
         )

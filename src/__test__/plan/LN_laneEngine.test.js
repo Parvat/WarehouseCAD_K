@@ -125,3 +125,33 @@ describe('lane BOM — the formulas (L 4, D 5, V 4)', () => {
     expect(laneBom(f.objects, f.elevations, { gridSize: GS, types: new Set(['rack_drive_in']) }).length).toBe(1)
   })
 })
+
+describe('(r4-push-back) push-back on the lane engine', () => {
+  it('a new push-back: 3 lanes × 4 deep × 3 levels, first beam at the floor; 36 positions', () => {
+    const o = mk('rack_pushback'), s = laneSpec(o, GS)
+    expect([s.lanes, s.deep, s.levels, s.firstIn, s.laneWIn, s.stationIn, inch(o.width), inch(o.height)]).toEqual([3, 4, 3, 0, 46, 52, 3 * 46 + 4 * 3, 4 * 52])
+    expect(getRackCapacity(o).total).toBe(36)
+  })
+  it('deep kept within 2 to 6 — typed and by the handle', () => {
+    const o = mk('rack_pushback')
+    expect([laneChange(o, { deep: 9 }, GS).palletDeep, laneChange(o, { deep: 1 }, GS).palletDeep]).toEqual([6, 2])
+    expect(laneResize(o, 'bc', 0, px(52) * 5, GS).palletDeep).toBe(6)
+    expect(laneResize(o, 'bc', 0, -px(52) * 5, GS).palletDeep).toBe(2)
+  })
+  it('the BOM formulas (L 3, D 4, V 3; frame lines 3 from 4 deep, 2 up to 3)', () => {
+    const o = mk('rack_pushback')
+    expect(laneParts(o, 3, GS).map(p => [p.part, p.size, p.qty])).toEqual([
+      ['Upright frame', '15 ft × 17 ft 4 in', 4 * 3],   // P × F
+      ['Beam', '46 in', 2 * 3 * 3],                      // 2 L V (front and rear)
+      ['Rail set', '4 deep', 3 * 3],                     // L V
+      ['Cart', '', 3 * 3 * 3],                           // (D − 1) L V
+      ['Entry guide', '', 2 * 3],                        // 2 L
+    ])
+    expect(laneParts(mk('rack_pushback', { palletDeep: 3, height: px(3 * 52) }), 3, GS)[0].qty).toBe(4 * 2)
+  })
+  it('the BOM: a Push-back racking section under P1, P2', () => {
+    const f = load('lane-push'), b = computeBom(f.objects, f.elevations, { gridSize: GS })
+    expect(b.types.map(t => [t.name, t.rows.map(r => r.tag)])).toEqual([['Push-back racking', ['P1', 'P2']]])
+    expect(b.types[0].lines.find(l => l.part === 'Cart').qty).toBe(2 * 27)
+  })
+})
