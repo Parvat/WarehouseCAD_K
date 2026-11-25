@@ -10168,11 +10168,14 @@ describe('REG — the hand check by real clicks', () => {
       return names.map(n => libraryItem(section, n))
     }
     for (const section of ['Racking', 'Ops', 'Structural', 'Safety', 'Zones', 'Floor Plans']) {
-      basicsIt(`REG-basics (click) — library: ${section} — every item through the Basics contract; failures reported (not failed) for the owner`, async () => {
+      basicsIt(`REG-basics (click) — library: ${section} — every item through the Basics contract; (basics-all) any failure fails the test`, async () => {
         const res = await runBasics(section.replace(/\s/g, ''), [...await libraryItems(section), ...(section === 'Racking' ? [filledRackItem()] : [])])
         // (rack-followup 6) every rack type follows the mouse now: the tool flow — Esc cancels, back to Select, a double-click
         // keeps it on — passes for each, none n/a
         if (section === 'Racking') expect(res.filter(x => /^tool: /.test(x.check) && (x.ok === false || (x.ok === 'n/a' && !/filled building/.test(x.type)))).map(x => x.type + ' · ' + x.check + ' · ' + JSON.stringify(x.detail))).toEqual([])
+        // (basics-all, the holiday run) every item in every library section passes the whole Basics contract — a hard fail
+        // now (was: reported for the owner); the audit found none failing (Floor Plans, Racking, Ops, Structural, Safety, Zones)
+        expect(res.filter(x => x.ok === false).map(x => x.type + ' · ' + x.check + ' · ' + JSON.stringify(x.detail))).toEqual([])
       })
     }
 
