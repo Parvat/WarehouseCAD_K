@@ -2,7 +2,15 @@
 
 Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
 
-**2026-11-25 run:** rack-fixes (overlap red for every rack, lane arrows, Tab then drag, lighter beam slots) and rack-followup (R numbers on every rack, every library type follows the mouse, the rotate handle) are done on `rack-followup`, which also holds the 2026-11-24 overnight rack-design work (full suite 4536 / 4536). Waiting for PP's hand-check and the questions in [MORNING.md](MORNING.md).
+**2026-11-25 run:** rack-fixes (overlap red for every rack, lane arrows, Tab then drag, lighter beam slots) and rack-followup (R numbers on every rack, every library type follows the mouse, the rotate handle) are merged (master e5c7c4c, full suite 4536 / 4536), with the 2026-11-24 overnight rack-design work.
+
+**PP's answers to the questions in MORNING.md (2026-11-25):**
+1. **Usable count:** yes. Positions covered by an overlap come off the usable count for every rack type, not only beam
+   racks. This is item 7 of the next prompt.
+2. **BOM:** yes. Non-beam types have an R number but no BOM line until each type is built (R3 onward).
+3. **Text drag:** fix it now (a text dragged on its own moves only down, and less than the mouse). This is item 6 of the
+   next prompt.
+4. **Lanes:** keep real sizes (46″). The mockup showed the style only.
 Read this first, then [EPICS.md](EPICS.md) (the plan), [FEATURES.md](FEATURES.md) (every feature and its status),
 CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
 
@@ -46,7 +54,8 @@ CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
   - Measure gives distance only (D2).
   - No cloud save, and a refresh starts at the sign-in screen (PL1–PL3).
   - UI: no empty-plan card, rail labels are tooltips only, Hub and Sign in use the old skin, no flyout pinning, dead code left (UI1).
-- **Small bugs (FEATURES.md, Open work):** the pen edge crossing a section; the REG-tally-ticks timeout.
+- **Small bugs (FEATURES.md, Open work):** the pen edge crossing a section; the REG-tally-ticks timeout; a text dragged on its own moves only down (fix next — item 6).
+- **Overlap and usable:** a non-beam rack's positions covered by an overlap are drawn red but not yet taken off usable (PP: they should be, for every type — item 7).
 
 ## Next: the epic order
 
