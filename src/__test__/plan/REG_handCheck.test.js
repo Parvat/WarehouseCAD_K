@@ -9259,11 +9259,13 @@ describe('REG — the hand check by real clicks', () => {
         await L.page.mouse.move(at.x, at.y); await L.page.waitForTimeout(150); await L.page.mouse.click(at.x, at.y); await L.page.waitForTimeout(300)
         const o = await L.S('return S.getState().objects.slice(-1)[0]')
         await L.page.keyboard.press('Escape'); await L.S('S.getState().selectObject(arg, false)', o.id); await L.page.waitForTimeout(300)
-        const want = (o.lanes || 2) * (o.palletDeep || (/pushback|pallet_flow/.test(o.type) ? 2 : 5)) * levels
+        // (r3-drive-in) a lane rack the engine runs carries its own levels (4 — levelsOwn), else its elevation type's
+        const want = (o.lanes || 2) * (o.palletDeep || (/pushback|pallet_flow/.test(o.type) ? 2 : 5)) * (o.levelsOwn ? o.levels : levels)
         const capCard = await L.S('return Promise.all([import("/src/utils/capacity.js"), import("/src/utils/elevations.js")]).then(([C, E]) => C.getRackCapacity(S.getState().objects.find(q => q.id === arg), undefined, E.levelsResolver(S.getState().elevations)).total)', o.id)
         expect([name, capCard]).toEqual([name, want])
         // its card shows it (Drive-In, Drive-Through, Pushback carry a Capacity line)
-        if (!/Pallet flow/.test(name)) expect(await card.getByText(want + ' PAL', { exact: true }).count()).toBeGreaterThanOrEqual(1)
+        // (r3-drive-in) the engine's card: in its head ("D1 · 4 lanes × 5 deep × 4 levels · 80 PAL")
+        if (!/Pallet flow/.test(name)) expect((await card.innerText()).replace(/\s+/g, ' ')).toMatch(new RegExp('(^| )' + want + ' PAL'))
         n++
       }
       // the layout's total is the sum
@@ -10173,6 +10175,8 @@ describe('REG — the hand check by real clicks', () => {
         // (rack-followup 6) every rack type follows the mouse now: the tool flow — Esc cancels, back to Select, a double-click
         // keeps it on — passes for each, none n/a
         if (section === 'Racking') expect(res.filter(x => /^tool: /.test(x.check) && (x.ok === false || (x.ok === 'n/a' && !/filled building/.test(x.type)))).map(x => x.type + ' · ' + x.check + ' · ' + JSON.stringify(x.detail))).toEqual([])
+        // (r3-drive-in, the holiday run) every rack type passes the whole Basics contract — a hard fail now (was: reported)
+        if (section === 'Racking') expect(res.filter(x => x.ok === false).map(x => x.type + ' · ' + x.check + ' · ' + JSON.stringify(x.detail))).toEqual([])
       })
     }
 
@@ -11326,5 +11330,110 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(400)
       expect(await r2Konva('.rack-overlap')).toEqual([])
     }, 2 * T)
+
+    /* ── the lane engine (docs/reports/r3-drive-in.md, r4-push-back.md, r5-pallet-flow.md) ── */
+    const lnOpen = async (name) => { const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, B.fixture(name)); return L }
+    const lnObj = (id) => L.S('return S.getState().objects.find(o => o.id === arg) || null', id)
+    const lnHist = () => L.S('return S.getState().historyIndex')
+    const lnCard = () => L.page.locator('[data-island="right-card"]')
+    const lnText = async () => (await lnCard().innerText()).replace(/\s+/g, ' ')
+    const lnBlurUndo = async () => { await L.page.evaluate(() => document.activeElement && document.activeElement.blur && document.activeElement.blur()); await L.page.mouse.move(5, 300); await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(350) }
+    const lnType = async (aria, v) => { const f = lnCard().getByRole('spinbutton', { name: aria, exact: true }); await f.click(); await f.fill(String(v)); await f.press('Enter'); await L.page.waitForTimeout(300) }
+    const lnView = async (o, z = 0.3) => { await L.S('S.setState({ zoom: arg.z, panX: 560 - (arg.o.x + arg.o.width / 2) * arg.z, panY: 450 - (arg.o.y + arg.o.height / 2) * arg.z })', { o, z }); await L.page.waitForTimeout(300) }
+    const lnSelect = async (o) => { await L.page.keyboard.press('Escape'); await L.click({ x: o.x + o.width * 0.5, y: o.y + o.height * 0.45 }); await L.page.waitForTimeout(300) }
+    /** Drag handle `h` (mr, bc …) of rack `id` by (dx, dy) world px — a real press on the handle as drawn. */
+    const lnHandle = async (id, h, dx, dy) => {
+      const o = await lnObj(id)
+      const at = { mr: [1, 0.5], ml: [0, 0.5], bc: [0.5, 1], tc: [0.5, 0], br: [1, 1] }[h]
+      const a = await L.toScreen({ x: o.x + o.width * at[0], y: o.y + o.height * at[1] }), b = await L.toScreen({ x: o.x + o.width * at[0] + dx, y: o.y + o.height * at[1] + dy })
+      await L.page.mouse.move(a.x, a.y); await L.page.mouse.down()
+      for (let k = 1; k <= 8; k++) await L.page.mouse.move(a.x + (b.x - a.x) * k / 8, a.y + (b.y - a.y) * k / 8)
+      await L.page.mouse.up(); await L.page.waitForTimeout(350)
+    }
+    /** The lane rack's library item placed by a real click: → the new object. */
+    const lnPlace = async (label, where) => {
+      await L.page.locator('[data-island="rail"]').getByRole('button', { name: 'Racking', exact: true }).click(); await L.page.waitForTimeout(250)
+      const before = await L.S('return S.getState().objects.map(o => o.id)')
+      await L.page.getByRole('menu', { name: 'Racking library' }).getByRole('menuitem', { name: label, exact: true }).click(); await L.page.waitForTimeout(250)
+      const p = await L.toScreen(where)
+      await L.page.mouse.move(p.x - 20, p.y - 20); await L.page.mouse.move(p.x, p.y, { steps: 3 }); await L.page.waitForTimeout(150); await L.page.mouse.click(p.x, p.y); await L.page.waitForTimeout(400)
+      return L.S('return S.getState().objects.find(o => !arg.includes(o.id) && /^rack_/.test(o.type)) || null', before)
+    }
+
+    onceIt('REG-r3-drive-in (click): (r3-drive-in) a drive-in placed from the library has the engine\'s defaults (4 lanes × 5 deep × 4 levels, lane 46 in, station 52 in, 3 in posts) and the tool goes back to Select; its card reads "D1 · 4 lanes × 5 deep × 4 levels · 80 PAL"; Lanes typed resizes from the anchored corner (one undo); Pallet width picked from its attached list; Type switched to Drive-through keeps the size (one undo); Flip turns the ENTRY face to the other end (footprint kept); the lane-side handle adds whole lanes, the depth-side handle whole stations; Levels 5 → 100 PAL; Floor guides off drops them from the BOM; the BOM has a Drive-in racking section under D1; save and reload keep every field; the PDF draws it', async () => {
+      await lnOpen('lane-drive')
+      const fp = await fpOf()
+      const d1 = await lnObj('lane-1')
+      await lnView(d1)
+      // placed from the library
+      const placed = await lnPlace('Drive-in', { x: d1.x + d1.width / 2, y: d1.y + d1.height + 500 })
+      expect(placed && [placed.type, placed.lanes, placed.palletDeep, placed.levels, placed.clearIn, placed.stationIn, placed.uprightWidth, Math.round(placed.width / 40 * 12), Math.round(placed.height / 40 * 12)]).toEqual(['rack_drive_in', 4, 5, 4, 3, 52, 3, 199, 260])
+      expect(await L.S('return S.getState().activeTool')).toBe('select')
+      await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
+      // the card
+      await lnView(d1); await lnSelect(d1)
+      expect(await lnText()).toContain('D1 · 4 lanes × 5 deep × 4 levels · 80 PAL')
+      // Lanes 6: wider, the start corner kept, one undo
+      let h0 = await lnHist()
+      await lnType('Lanes', 6)
+      let o = await lnObj('lane-1')
+      expect([o.lanes, Math.round(o.width / 40 * 12), Math.round(o.x), Math.round(o.y), (await lnHist()) - h0]).toEqual([6, 6 * 46 + 7 * 3, Math.round(d1.x), Math.round(d1.y), 1])
+      await lnBlurUndo(); expect((await lnObj('lane-1')).lanes).toBe(4)
+      // Pallet width from its list (attached to its field): 48 → lane 54
+      await lnSelect(d1)
+      await lnCard().getByRole('button', { name: 'Pallet width (in) sizes' }).click(); await L.page.waitForTimeout(200)
+      const list = L.page.getByRole('listbox', { name: 'Pallet width (in) sizes' })
+      const fb = await lnCard().getByRole('combobox', { name: 'Pallet width (in)' }).boundingBox(), lb = await list.boundingBox()
+      expect([Math.abs(lb.x - fb.x) <= 2, Math.abs(lb.y - (fb.y + fb.height)) <= 6 || Math.abs(lb.y + lb.height - fb.y) <= 6]).toEqual([true, true])
+      await list.getByRole('option', { name: '48' }).click(); await L.page.waitForTimeout(300)
+      expect(Math.round((await lnObj('lane-1')).width / 40 * 12)).toBe(4 * 54 + 5 * 3)
+      await lnBlurUndo()
+      // Type: drive-through, the size kept, one undo
+      await lnSelect(d1); h0 = await lnHist()
+      await lnCard().getByRole('button', { name: 'Drive-through', exact: true }).click(); await L.page.waitForTimeout(300)
+      o = await lnObj('lane-1')
+      expect([o.type, o.width, o.height, o.x, o.y, (await lnHist()) - h0]).toEqual(['rack_drive_through', d1.width, d1.height, d1.x, d1.y, 1])
+      await lnBlurUndo(); expect((await lnObj('lane-1')).type).toBe('rack_drive_in')
+      // Flip: the ENTRY face to the other end, the footprint kept
+      await lnSelect(d1)
+      await lnCard().getByRole('button', { name: 'Flip entry face' }).click(); await L.page.waitForTimeout(300)
+      o = await lnObj('lane-1')
+      expect([o.rotation, o.x, o.y, o.width, o.height]).toEqual([180, d1.x, d1.y, d1.width, d1.height])
+      expect(await L.S('return import("/src/generate/laneFaces.js").then(M => M.facesOf(arg))', o)).toEqual(['bottom'])
+      await lnBlurUndo()
+      // the handles: a lane on the lane side, a station on the depth side (one undo each)
+      await lnSelect(d1); h0 = await lnHist()
+      await lnHandle('lane-1', 'mr', (49 / 12) * 40, 0)
+      o = await lnObj('lane-1')
+      expect([o.lanes, Math.round(o.x), (await lnHist()) - h0]).toEqual([5, Math.round(d1.x), 1])
+      await lnHandle('lane-1', 'bc', 0, (52 / 12) * 40)
+      o = await lnObj('lane-1')
+      expect([o.palletDeep, Math.round(o.y), Math.round(o.height / 40 * 12)]).toEqual([6, Math.round(d1.y), 6 * 52])
+      await lnBlurUndo(); await lnBlurUndo()
+      expect([(await lnObj('lane-1')).lanes, (await lnObj('lane-1')).palletDeep]).toEqual([4, 5])
+      // Levels 5 → 100 PAL
+      await lnSelect(d1); await lnType('Levels', 5)
+      expect(await lnText()).toContain('D1 · 4 lanes × 5 deep × 5 levels · 100 PAL')
+      // Floor guides off: out of the BOM
+      await lnCard().getByRole('switch', { name: 'Floor guides' }).click(); await L.page.waitForTimeout(300)
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      const sec = L.page.locator('[data-bom-card="rack_drive_in"]')
+      const st = (await sec.innerText()).replace(/\s+/g, ' ')
+      expect(st).toMatch(/^Drive-in racking D1 /)
+      expect(st).not.toContain('Floor guide')
+      expect(st).toContain('Rail arm')
+      expect(await L.page.locator('[data-bom-card="rack_drive_through"]').innerText()).toMatch(/T1/)
+      await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
+      // save and reload: every field kept
+      const keep = ['lanes', 'palletDeep', 'levels', 'levelsOwn', 'palletWIn', 'palletDIn', 'clearIn', 'stationIn', 'uprightWidth', 'firstIn', 'spacingIn', 'floorGuides', 'width', 'height', 'x', 'y', 'rotation', 'type']
+      const before = await lnObj('lane-1')
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, await L.S('return SL.serializeScene(S.getState())'))
+      const after = await lnObj('lane-1')
+      expect(keep.map(k => after[k])).toEqual(keep.map(k => before[k]))
+      // the PDF draws it (its lanes' slots and its number)
+      const pdf = await L.S('return import("/src/export/pdfExport.js").then(M => { const st = S.getState(); return M.buildLayoutSVG(st.objects, st.layers, st.gridSize, { elevations: st.elevations }) })')
+      expect(typeof pdf === 'string' ? pdf.length > 1000 : !!pdf).toBe(true)
+      void fp
+    }, 3 * T)
   })
 })

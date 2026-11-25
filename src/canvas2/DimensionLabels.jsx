@@ -24,6 +24,7 @@ import { isEmptySide } from '../utils/bayEmpty'
 import { useFlued } from './dragPreview'   // (gen-lock)
 import { faceWordsReach } from '../render/rackOps'   // (rack-design)
 import { shelvingLabel, shelvingTag } from '../utils/shelving'   // (rack-round3 6)
+import { laneEngineOn } from '../racks/laneEngine'   // (r3-drive-in)
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
    CanvasUI.jsx's RackLabels/FpSegmentDimLabels and CanvasOverlays.jsx's live
@@ -211,7 +212,8 @@ export function RackLabels({ obj: stored, zoom, gridSize }) {
     const clearPx = (1 / 12) * gridSize
     const palletWPx = ((obj.palletWIn || 40) / 12) * gridSize
     const laneWPx = ledgePx * 2 + clearPx * 2 + palletWPx
-    const derivedW = (lanes + 1) * upW + lanes * laneWPx
+    // (r3-drive-in) a rack the lane engine sized: its own width (its clearance and post may be anything)
+    const derivedW = laneEngineOn(obj) ? bw : (lanes + 1) * upW + lanes * laneWPx
 
     // (rack-design) past the face's words (ENTRY, LOAD, PICK), never over them
     const wY = by + bh + faceWordsReach(obj, 'bottom', gridSize) + 14 / zoom

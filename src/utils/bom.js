@@ -36,6 +36,8 @@ import { isSection, polygonOf, pointInPolygon } from './sectionAreas'
 import { lineNamer, namedRows, lineSections } from './lineNames'
 import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
 import { deepOf, deepGapOf } from './deep'   // (r2-double-deep)
+import { laneBom } from '../racks/laneBom'   // (r3-drive-in) the lane racks' own sections
+import { LANE_ENGINE_ON } from '../racks/laneEngine'
 
 export const BOM_DEFAULTS = {
   decks: [
@@ -195,8 +197,10 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
     if (S.endGuards) add('End-of-aisle guard', '', 1, end.rackId, 0, nos.length ? Math.min(...nos) : 0)
   }
 
-  const others = (objects || []).filter(o => OTHER_RACK.test(o.type || '') && !isBomRack(o))
+  // (r3-drive-in) the lane racks the engine runs have their own sections (`types`); the rest are still flagged
+  const others = (objects || []).filter(o => OTHER_RACK.test(o.type || '') && !isBomRack(o) && !LANE_ENGINE_ON.has(o.type))
   if (others.length) for (const o of others) flag('other', (n) => `${n} rack${n === 1 ? '' : 's'} of another kind not in this BOM (selective and back-to-back only)`, o.id)
+  const types = laneBom(objects || [], T, { gridSize, types: LANE_ENGINE_ON })
 
   // the lines R1 … that have a count, each in the drawn section holding its middle (else Unassigned)
   const secs = (objects || []).filter(isSection), polys = secs.map(polygonOf)
@@ -222,6 +226,8 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
     hasSections: secs.length > 0,
     flags: [...flags.values()].map(({ key, text, ids }) => ({ key, text, ids: [...ids] })),
     counted: { racks: racks.filter(r => ledger.racks.get(r.id)?.bays > 0).length, bays: racks.reduce((t, r) => t + (ledger.racks.get(r.id)?.bays || 0), 0) },
+    // (r3-drive-in) one section per lane rack type, under its letter lines (D1, T1 …): racks/laneBom.js
+    types,
   }
 }
 
@@ -331,5 +337,7 @@ export function bomCsv(bom) {
   const esc = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s }
   const rows = [['Section', 'Rows', 'Part', 'Size', 'Qty', 'Pairs']]
   for (const g of bomGroups(bom)) for (const l of g.lines) rows.push([g.name, rowsText(g.rows, bom.names, bom.sec), l.part, l.size, l.qty, l.part === 'Beam' ? l.pairs : ''])
+  // (r3-drive-in) each lane rack type's section after the beam racks'
+  for (const t of bom.types || []) for (const l of t.lines) rows.push([t.name, t.rows.map(r => r.tag).join(' '), l.part, l.size, l.qty, ''])
   return [...bom.flags.map(f => '# ' + f.text), ...rows.map(r => r.map(esc).join(','))].join('\r\n') + '\r\n'
 }

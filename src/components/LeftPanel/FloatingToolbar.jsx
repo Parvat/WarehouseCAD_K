@@ -1,4 +1,5 @@
 import { BEAM_TYPES } from '../../utils/rackTypes'
+import { LANE_ENGINE_ON, laneNew } from '../../racks/laneEngine'   // (r3-drive-in)
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { placeFloat, floatAvoidRects, floatFreeHeight } from '../../utils/floatPlace'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL } from '../../canvas2/sectionTool'
@@ -1017,6 +1018,9 @@ export function FloatingToolbar({ studio = false } = {}) {
       // (r2-double-deep) a double-deep rack: its pallets deep and their spacing, the frame depth they are counted from
       ...(item.meta?.deep?{deep:item.meta.deep,deepGapIn:item.meta.deepGapIn??6,depthIn:42,height:((item.meta.deep*42+(item.meta.deep-1)*(item.meta.deepGapIn??6))/12)*GS}:{}),
       ...levelsFor(item.type),   // 4 levels, like a generated rack (utils/rackLevels.js)
+      // (r3-drive-in) a lane rack the engine runs: its defaults (lanes, deep, levels, pallet, clearance, station, post) and
+      // size — last, over the older lane fields above
+      ...(LANE_ENGINE_ON.has(item.type)?laneNew(item.type, GS):{}),
       layerId:layerForType(item.type),   // its layer by type (utils/layers.js)
       /* column_grid is parented like everything else: the columns are the
          building's own structure, so they travel with it and go with it when

@@ -70,7 +70,8 @@ export function oversizedBayIndices(beams, palletFaceIn) {
 
 /** (lane-positions) A lane rack's levels: its elevation type's (`levelsAt` — levelsResolver), else its own, else 1. */
 export function laneLevels(obj, levelsAt = null) {
-  const v = levelsAt ? levelsAt(obj, 0, 0) : obj.levels
+  // (r3-drive-in) levels set on the rack itself (its card, a new rack — `levelsOwn`) win over its elevation type's
+  const v = obj.levelsOwn && obj.levels > 0 ? obj.levels : levelsAt ? levelsAt(obj, 0, 0) : obj.levels
   return Math.max(1, Math.round(Number(v) || 1))
 }
 

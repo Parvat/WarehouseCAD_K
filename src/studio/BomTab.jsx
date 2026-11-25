@@ -199,6 +199,16 @@ export function BomTab() {
             {bom.flags.map(f => <Note key={f.key} level="warning" role="alert" data-bom-flag={f.key}>{f.text}</Note>)}
           </div>
         )}
+        {/* (r3-drive-in) each lane rack type: its own section, under its letter lines */}
+        {(bom.types || []).map(t => (
+          <section key={t.id} data-bom-card={t.id} aria-label={`${t.name} parts`} style={{ borderRadius: 8, background: C.active, minWidth: 0 }}>
+            <div data-bom-group-head={t.id} style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '10px 12px 6px' }}>
+              <span style={{ flex: 1, flexShrink: 0, color: C.strong, fontWeight: 600, fontSize: 13 }}>{t.name}</span>
+              <span data-bom-rows style={{ color: C.muted, fontSize: 11, whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.rows.map(r => r.tag).join(', ')}</span>
+            </div>
+            <PartLines g={{ id: t.id, lines: t.lines }} picked={picked} onPick={pick} />
+          </section>
+        ))}
         {bom.lines.length
           ? <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {/* the Total: every part of the layout */}
@@ -238,7 +248,7 @@ export function BomTab() {
                 )
               })}
             </div>
-          : <span style={{ color: C.muted, fontSize: 12 }}>No selective or back-to-back racks yet.</span>}
+          : !(bom.types || []).length && <span style={{ color: C.muted, fontSize: 12 }}>No selective or back-to-back racks yet.</span>}
         <span style={{ color: C.muted, fontSize: 11 }}>Selective and back-to-back racking · quantities only. Click a line to see its racks.</span>
       </Sec>
     </div>

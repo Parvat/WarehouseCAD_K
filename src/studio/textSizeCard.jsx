@@ -57,8 +57,8 @@ const save = () => { try { autoSave(serializeScene(useCanvasStore.getState())) }
  *  Enter or leaving the field. (d1-bar) The list opens ATTACHED to the field (studio/Popover.jsx anchorPlace): directly
  *  below it, left-aligned with it — above it with no room below — portalled over the canvas, so a bar's transform or a
  *  card's edge never moves or clips it (the Text bar's list used to open far to the right). */
-export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_OPTIONS, custom = false }) {   // (rack-round3 6) `custom`: a last row Custom — the field emptied to type any size   // (d1-polish) `options`: its list (a block arrow's sizes)
-  const show = sizeText(inches)
+export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_OPTIONS, custom = false, parse = parseTextInches, format = sizeText }) {   // (r3-drive-in) `parse` / `format`: a length field's own (utils/units.js — Imperial or Metric)   // (rack-round3 6) `custom`: a last row Custom — the field emptied to type any size   // (d1-polish) `options`: its list (a block arrow's sizes)
+  const show = format(inches)
   const [text, setText] = useState(show)
   const [bad, setBad] = useState(false)
   const [open, setOpen] = useState(false)
@@ -68,7 +68,7 @@ export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_
   useEffect(() => { setText(show); setBad(false) }, [show])
   const done = (raw = text) => {
     if (String(raw).trim() === '') { if (inches > 0) onCommit(null); return }
-    const v = parseTextInches(raw)
+    const v = parse(raw)
     if (v == null) { setBad(true); return }
     setBad(false); if (v !== inches) onCommit(v); else setText(show)
   }
@@ -81,7 +81,7 @@ export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_
     return { left: at.left, width: w, top: at.top }
   }
   const openList = () => { setPos(place()); setHi(Math.max(0, options.indexOf(inches))); setOpen(true) }
-  const pick = (v) => { setOpen(false); setText(sizeText(v)); setBad(false); if (v !== inches) onCommit(v) }
+  const pick = (v) => { setOpen(false); setText(format(v)); setBad(false); if (v !== inches) onCommit(v) }
   useEffect(() => {
     if (!open) return
     const away = (e) => { if (wrap.current && !wrap.current.contains(e.target) && !e.target.closest?.('[data-size-list]')) setOpen(false) }
@@ -126,7 +126,7 @@ export function SizeInput({ inches, placeholder, aria, onCommit, options = SIZE_
               <div key={v} role="option" aria-selected={cur} data-size={v} onMouseDown={e => e.preventDefault()} onClick={() => pick(v)} onMouseEnter={() => setHi(i)}
                 style={{ height: ROW, display: 'flex', alignItems: 'center', padding: '0 8px', borderRadius: 5, cursor: 'pointer', fontSize: 12,
                   fontFamily: "'JetBrains Mono', monospace", color: cur ? '#7BD3A4' : '#E8EAE6', background: cur ? '#2E4A3C' : lit ? '#2A2F2C' : 'transparent' }}>
-                {v}
+                {format(v)}
               </div>
             )
           })}

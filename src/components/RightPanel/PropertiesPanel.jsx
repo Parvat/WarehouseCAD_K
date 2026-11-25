@@ -16,6 +16,8 @@ import { Swatch } from '../../studio/Swatch'
 import { SizeInput } from '../../studio/textSizeCard'
 import { shelvingLabel, shelvingTag, shelvesOf, isStandard, SHELF_UNIT_IN, SHELF_DEPTH_IN, unitWidthChange, unitCountChange, depthChange } from '../../utils/shelving'   // (rack-round3 6)
 import { shelvingUnits } from '../../render/rackOps'
+import { LaneCard } from '../../studio/LaneCard'   // (r3-drive-in)
+import { laneEngineOn } from '../../racks/laneEngine'
 import { nanoid as newIdForZone } from 'nanoid'
 
 /** (dealer audit; d1-final, the mockups' cards) A drawn shape's style after drawing — the Draw bar's own controls:
@@ -498,6 +500,17 @@ export function PropertiesPanel() {
       <Head><ColumnGridHead /></Head>
       <ColumnGridPanel obj={obj} locked={locked} />
       <TextSizeField objs={[obj]} type="column" />
+      <More locked={locked}>
+        <ObjectActions obj={obj} />
+        <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
+      </More>
+    </>
+  )
+
+  /* (r3-drive-in) a lane rack the lane engine runs: its card (studio/LaneCard.jsx), then More */
+  if (laneEngineOn(obj)) return (
+    <>
+      <LockedFields locked={locked}><LaneCard obj={obj} /></LockedFields>
       <More locked={locked}>
         <ObjectActions obj={obj} />
         <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>

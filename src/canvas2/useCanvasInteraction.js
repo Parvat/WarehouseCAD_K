@@ -14,6 +14,7 @@ import { syncHandleOverlayNode } from './ResizeHandlesOverlay'
 import { computeGroupOutline, groupRotateHandleHitTest, applyGroupRotation } from './groupRotate'
 import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from './fpRotate'
 import { resizeText, resizeCircle, snapPoint, useShapePoint, clearShapePoint, mergedOnNeighbour, useLengthEdit } from '../utils/drawTool'
+import { laneEngineOn, laneResize } from '../racks/laneEngine'   // (r3-drive-in)
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
@@ -1290,6 +1291,8 @@ export function useCanvasInteraction({
           setSmartGuides(z.guides)
         } else if (origObj.type === 'circle' && isDrawn(origObj)) updates = resizeCircle(origObj, handle, pos.x - startWorld.x, pos.y - startWorld.y)   // (dealer audit) stays a circle
         else if (origObj.type === 'text') updates = resizeText(origObj, handle, pos.x - startWorld.x, pos.y - startWorld.y, getObjectBounds(origObj))   // (D1) its text height
+        // (r3-drive-in) a lane rack the engine runs: whole lanes on its lane sides, whole depth stations on its depth sides
+        else if (laneEngineOn(origObj)) updates = laneResize(origObj, handle, dx, dy, st.gridSize || 40)
         else updates = applyResize(origObj, handle, dx, dy, snapFn, !!evt.shiftKey)
 
         /* Anchor-point correction for a rotated rect: growing/shrinking
