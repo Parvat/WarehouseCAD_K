@@ -21,6 +21,11 @@ Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
 4. **Remove racks on lane racks** (drive-in, drive-through, push-back, pallet flow) removes only the covered lanes, like
    covered bays on a beam rack; the whole rack only when no lane is left. One undo. (Item 3.)
 
+**Holiday run (2026-11-26, branch holiday-run, not merged):** rack-xmarks, r3-drive-in, r4-push-back, r5-pallet-flow (one
+lane-rack engine for drive-in, drive-through, push-back, pallet flow: card, handles, BOM sections), basics-all (every
+library section of REG-basics strict), old-files (every saved file stable across save and reload), text-and-overlap (an
+overlap scan, the demo's R6 off a column). Reports in docs/reports/; questions for PP in each.
+
 **rack-round3** (branch, from rack-round2 — it carries round 2 too): those three answers, a short face marked by X marks
 on its lost positions and a red chip (no red line), a non-beam rack's number outside the building when it stands within
 2 ft of a wall, shelving sizes (unit 36 / 42 / 48 in, depth 12 / 18 / 24 in, Custom; no shelf count drawn; the label
@@ -50,7 +55,8 @@ CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
 
 ## Known gaps
 
-- **Lane-rack positions bug:** drive-in, drive-thru, push-back and pallet flow count lanes × deep and ignore levels. Fix it in R3 or R4. Found in the R1 audit.
+- **Lane-rack positions:** lanes × deep × levels since lane-positions; on holiday-run a lane rack placed or edited carries
+  its own levels (`levelsOwn`), a rack saved before still takes its elevation type's.
 - **Fill does not dodge columns with its frames.** In a 25′ grid, a section filled from the wall can put an upright frame on a column. Check flags it as an error and Generate does not do it. The demo's section split was moved to avoid one.
 - **Drawing tools that draw nothing yet:**
   - Arc and Arrow are held out of the Line tools menu and the A key; D2 or later.
