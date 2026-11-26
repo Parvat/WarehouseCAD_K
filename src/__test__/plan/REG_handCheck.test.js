@@ -11294,5 +11294,39 @@ describe('REG — the hand check by real clicks', () => {
       expect(await L.page.locator('[data-island="right-card"] [data-custom-size]').count()).toBe(1)
       expect((await r3Obj('old-shelf')).width).toBe(400)
     }, 2 * T)
+
+    /* ── text-and-overlap (docs/reports/text-and-overlap.md) ── */
+    onceIt('REG-text-overlap (click): (text-and-overlap) the demo file and the four fixtures, each viewed tile by tile across the whole building at 15, 30 and 100 %: no two labels on the canvas overlap (every visible text — row numbers, aisle and face chips, names, chains, bubbles, badges), and no row number or aisle chip sits on a rack or a column', async () => {
+      const B = await import('./handCheck/browser.js'), fs = await import('node:fs')
+      const demo = fs.readFileSync(new URL('../../../docs/demo/demo-warehouse.wcad', import.meta.url), 'utf8')
+      const found = []
+      for (const [name, json] of [['demo', demo], ...B.FIXTURES.map(f => [f, B.fixture(f)])]) {
+        L = await B.openLayout(app, json)
+        const fp = await fpOf()
+        for (const z of [0.15, 0.3, 1]) {
+          const W = 1000 / z, Hh = 700 / z
+          for (let y = fp.y - 200; y < fp.y + fp.height + 200; y += Hh) for (let x = fp.x - 200; x < fp.x + fp.width + 200; x += W) {
+            await L.S('S.setState({ zoom: arg.z, panX: 60 - arg.x * arg.z, panY: 100 - arg.y * arg.z, selectedIds: [] })', { z, x, y }); await L.page.waitForTimeout(200)
+            const solids = await L.S('const st = S.getState(), z = st.zoom; return [...st.objects.filter(o => /^rack_/.test(o.type) && o.type !== "rack_mezzanine").map(o => H.worldBoundsOf(o, st.objects)), ...H.columnRectsOf(st.objects, st.gridSize || 40).map(c => ({ x: c.x, y: c.y, width: c.w, height: c.h }))].map(b => ({ x: b.x * z + st.panX, y: b.y * z + st.panY, w: b.width * z, h: b.height * z }))')
+            const bad = await L.page.evaluate((solids) => {
+              const st = window.Konva.stages[0]; st.draw()
+              const vis = (n) => { let p = n; while (p) { if (p.visible && !p.visible()) return false; if (p.opacity && p.opacity() === 0) return false; p = p.getParent() } return true }
+              const items = st.find('Text').filter(t => vis(t) && t.text().trim() && t.getClientRect().width > 2).map(t => {
+                const r = t.getClientRect(); let g = t.getParent(), grp = ''
+                while (g && g !== st) { if (g.name && g.name()) { grp = g.name(); break } g = g.getParent() }
+                return { t: t.text(), grp: grp || t.name(), x: r.x, y: r.y, w: r.width, h: r.height, id: t._id }
+              }).filter(i => i.x + i.w > 0 && i.y + i.h > 0 && i.x < 1440 && i.y < 900)
+              const meet = (a, b) => Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 1 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 1
+              const out = []
+              for (let i = 0; i < items.length; i++) for (let j = i + 1; j < items.length; j++) if (meet(items[i], items[j])) out.push(`${items[i].grp}:${items[i].t} × ${items[j].grp}:${items[j].t}`)
+              for (const a of items) if (/^(rack-line|aisle:|face-aisle:|cross-aisle:|lane-face:)/.test(a.grp)) for (const b of solids) if (meet(a, b)) out.push(`${a.grp}:${a.t} on a rack or column`)
+              return out
+            }, solids)
+            for (const s of bad) found.push(`${name} @${z}: ${s}`)
+          }
+        }
+      }
+      expect([...new Set(found)]).toEqual([])
+    }, 8 * T)
   })
 })
