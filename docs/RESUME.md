@@ -36,7 +36,12 @@ Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
 9. **Zoom p95 53 ms (CPU slowed 4×):** accepted. Do not cache racks as an image.
 10. **Older customer files:** PP will add some later. Nothing to do now.
 
-**pushback-frames (2026-11-27, branch, from lane-fixes — master did not have lane-fixes yet; it carries it):** PP chose
+**pushback-config (2026-11-27, branch, from master 5a591ec):** the push-back frame split is a dealer setting (PP is not
+sure; dealers differ): the card's Max pallets per frame (2 to 6, a new rack 2) and Longer frame at (Front / Rear), N =
+ceil(deep / max); the line under them lists the frames front first. Saved push-backs read 3 / Front — unchanged. The
+defaults are a guess to confirm with dealers. Report: [reports/pushback-config.md](reports/pushback-config.md).
+
+**pushback-frames (2026-11-27, merged 2026-11-27, from lane-fixes — master did not have lane-fixes yet; it carries it):** PP chose
 option B — a deep push-back is short frames tied with row spacers, not one frame the full depth. 1 frame a post line up
 to 3 deep, 2 from 4 deep; the card's Row spacer length (6 in) and Spacers per joint (2); the depth = frames + spacers, so
 the drawing (a gap at the joint), the aisle check and the dimensions follow. Saved push-backs keep their size: their

@@ -28,7 +28,7 @@ const BASE = { palletWIn: 40, palletDIn: 48, clearIn: 3, stationAddIn: 4, postIn
 export const LANE_DEFAULTS = {
   rack_drive_in:      { ...BASE, lanes: 4, deep: 5, levels: 4, firstIn: 8, floorGuides: true },
   rack_drive_through: { ...BASE, lanes: 4, deep: 5, levels: 4, firstIn: 8, floorGuides: true },
-  rack_pushback:      { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, newFirstIn: 8, minDeep: 2, maxDeep: 6, spacerIn: 6, spacersPerJoint: 2 },   // (lane-fixes) a new one: first beam 8 in, rails on it; a saved one without the field reads 0
+  rack_pushback:      { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, newFirstIn: 8, minDeep: 2, maxDeep: 6, spacerIn: 6, spacersPerJoint: 2, maxPerFrame: 2, longerAt: 'front' },   // (lane-fixes) a new one: first beam 8 in, rails on it; a saved one without the field reads 0
   rack_pallet_flow:   { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, pitchInPerFt: 0.375 },
 }
 /** (pushback-frames) PUSH-BACK FRAMES — PP's option B: a deep push-back is two short frames tied with row spacers, not
@@ -36,15 +36,23 @@ export const LANE_DEFAULTS = {
  *  frames (N = ceil(deep / 3)). The pallets split as evenly as they go, an odd one on the front (bottom, LOAD) frame.
  *  The rack's depth = its frames' depths (pallets × depth station) + a row spacer length at each joint. */
 export const PUSHBACK_PER_FRAME = 3
-/** Each frame's pallets, rear (top) to front (bottom) — [4] → [2, 2], [5] → [2, 3]; another type: one frame. */
-export function laneFrames(type, deep, perFrame = PUSHBACK_PER_FRAME) {
+/** (pushback-config) The frame split is a DEALER SETTING on the card (PP is not sure; dealers differ): Max pallets per
+ *  frame (2 to 6; a new rack 2 — a guess to confirm with dealers) and Longer frame at (Front or Rear; a new rack Front).
+ *  N = ceil(deep / max). A push-back saved without them reads max 3 / Front — the split it has always had, so nothing
+ *  changes on load. */
+export const PUSHBACK_MAX_PER_FRAME = { min: 2, max: 6, saved: PUSHBACK_PER_FRAME }
+const perFrameOf = (v, d = PUSHBACK_PER_FRAME) => { const n = Math.round(Number(v)); return v != null && Number.isFinite(n) ? Math.min(PUSHBACK_MAX_PER_FRAME.max, Math.max(PUSHBACK_MAX_PER_FRAME.min, n)) : d }
+const longerOf = (v, d = 'front') => (v === 'rear' || v === 'front' ? v : d)
+/** Each frame's pallets, rear (top) to front (bottom), split as evenly as they go, the longer frames at `longerAt` —
+ *  [4] → [2, 2]; 5 deep at 3: front [2, 3], rear [3, 2]; another type: one frame. */
+export function laneFrames(type, deep, perFrame = PUSHBACK_PER_FRAME, longerAt = 'front') {
   const D = Math.max(1, Math.round(deep || 1))
   if (type !== 'rack_pushback') return [D]
-  const N = Math.max(1, Math.ceil(D / perFrame)), base = Math.floor(D / N), extra = D - base * N
-  return Array.from({ length: N }, (_, i) => base + (i >= N - extra ? 1 : 0))
+  const N = Math.max(1, Math.ceil(D / Math.max(1, perFrame))), base = Math.floor(D / N), extra = D - base * N
+  return Array.from({ length: N }, (_, i) => base + ((longerAt === 'rear' ? i < extra : i >= N - extra) ? 1 : 0))
 }
 /** The joints between frames (each a row spacer length deep). */
-export const laneJoints = (type, deep) => laneFrames(type, deep).length - 1
+export const laneJoints = (type, deep, perFrame = PUSHBACK_PER_FRAME) => laneFrames(type, deep, perFrame).length - 1
 
 /** Each type's name in words (the card, the BOM). */
 export const LANE_NAMES = { rack_drive_in: 'Drive-in', rack_drive_through: 'Drive-through', rack_pushback: 'Push-back', rack_pallet_flow: 'Pallet flow' }
@@ -63,7 +71,8 @@ export function laneSpec(o, gridSize = 40) {
   const clearIn = o.clearIn != null ? nonneg(o.clearIn, d.clearIn) : Math.max(0, r2(((wIn - (lanes + 1) * postIn) / lanes - palletWIn) / 2))
   // (pushback-frames) a push-back saved without a spacer keeps its outer size exactly: its spacer is what fits — the depth
   // over its stations, split over its joints (0 on every rack saved so far); a rack with no joint reads the default
-  const J = laneJoints(o?.type, deep), spDef = d.spacerIn ?? 0
+  const maxPerFrame = perFrameOf(o.maxPerFrame), longerAt = longerOf(o.longerAt)   // (pushback-config) saved: 3 / front
+  const J = laneJoints(o?.type, deep, maxPerFrame), spDef = d.spacerIn ?? 0
   let stationIn, spacerIn
   if (o.stationIn != null) {
     stationIn = pos(o.stationIn, palletDIn + d.stationAddIn)
@@ -80,28 +89,28 @@ export function laneSpec(o, gridSize = 40) {
     type: o.type, lanes, deep, levels, palletWIn, palletDIn, clearIn, stationIn, postIn, firstIn, spacingIn, heightIn,
     heightTyped: o.heightIn != null, laneWIn: palletWIn + 2 * clearIn,
     floorGuides: o.floorGuides ?? !!d.floorGuides, pitchInPerFt: o.pitchInPerFt ?? d.pitchInPerFt ?? null,
-    spacerIn, spacersPerJoint, frames: laneFrames(o?.type, deep),
+    spacerIn, spacersPerJoint, maxPerFrame, longerAt, frames: laneFrames(o?.type, deep, maxPerFrame, longerAt),
   }
 }
 /** The footprint of spec `s` (inches). */
-export const laneSizeIn = (s) => ({ w: s.lanes * (s.palletWIn + 2 * s.clearIn) + (s.lanes + 1) * s.postIn, h: s.deep * s.stationIn + laneJoints(s.type, s.deep) * (s.spacerIn || 0) })
+export const laneSizeIn = (s) => ({ w: s.lanes * (s.palletWIn + 2 * s.clearIn) + (s.lanes + 1) * s.postIn, h: s.deep * s.stationIn + laneJoints(s.type, s.deep, s.maxPerFrame ?? PUSHBACK_PER_FRAME) * (s.spacerIn || 0) })
 
 /** A new rack's fields (the library's placement): the type's defaults, its size. */
 export function laneNew(type, gridSize = 40) {
   const d = LANE_DEFAULTS[type]
-  const s = { type, lanes: d.lanes, deep: d.deep, palletWIn: d.palletWIn, palletDIn: d.palletDIn, clearIn: d.clearIn, stationIn: d.palletDIn + d.stationAddIn, postIn: d.postIn, spacerIn: d.spacerIn }
+  const s = { type, lanes: d.lanes, deep: d.deep, palletWIn: d.palletWIn, palletDIn: d.palletDIn, clearIn: d.clearIn, stationIn: d.palletDIn + d.stationAddIn, postIn: d.postIn, spacerIn: d.spacerIn, maxPerFrame: d.maxPerFrame }
   const { w, h } = laneSizeIn(s)
   return {
     lanes: d.lanes, palletDeep: d.deep, levels: d.levels, levelsOwn: true, palletWIn: d.palletWIn, palletDIn: d.palletDIn,
     clearIn: d.clearIn, stationIn: s.stationIn, uprightWidth: d.postIn, firstIn: d.newFirstIn ?? d.firstIn, spacingIn: d.spacingIn,
     ...(d.floorGuides ? { floorGuides: true } : {}), ...(d.pitchInPerFt ? { pitchInPerFt: d.pitchInPerFt } : {}),
-    ...(d.spacerIn != null ? { spacerIn: d.spacerIn, spacersPerJoint: d.spacersPerJoint } : {}),
+    ...(d.spacerIn != null ? { spacerIn: d.spacerIn, spacersPerJoint: d.spacersPerJoint, maxPerFrame: d.maxPerFrame, longerAt: d.longerAt } : {}),
     width: (w / 12) * gridSize, height: (h / 12) * gridSize,
   }
 }
 
 /** The object patch for an edit `p` — any of lanes, deep, levels, palletWIn, palletDIn, clearIn, postIn, firstIn,
- *  spacingIn, heightIn (null: back to first + levels × spacing), floorGuides, type, spacerIn, spacersPerJoint (push-back) — with the size worked out again and
+ *  spacingIn, heightIn (null: back to first + levels × spacing), floorGuides, type, spacerIn, spacersPerJoint, maxPerFrame, longerAt (push-back) — with the size worked out again and
  *  the anchored corner (`anchor`, bayAnchor's: the start corner by default) held where it is drawn. A pallet depth
  *  changed: the depth station is the pallet depth + 4. Push-back: deep kept within 2 to 6. */
 export function laneChange(o, p = {}, gridSize = 40, anchor = {}) {
@@ -117,12 +126,13 @@ export function laneChange(o, p = {}, gridSize = 40, anchor = {}) {
   const clearIn = p.clearIn != null ? nonneg(p.clearIn, s.clearIn) : s.clearIn
   const postIn = p.postIn != null ? pos(p.postIn, s.postIn) : s.postIn
   const spacerIn = p.spacerIn != null ? nonneg(p.spacerIn, s.spacerIn) : s.spacerIn
-  const { w, h } = laneSizeIn({ type, lanes, deep, palletWIn, clearIn, postIn, stationIn, spacerIn })
+  const maxPerFrame = p.maxPerFrame != null ? perFrameOf(p.maxPerFrame, s.maxPerFrame) : s.maxPerFrame   // (pushback-config)
+  const { w, h } = laneSizeIn({ type, lanes, deep, palletWIn, clearIn, postIn, stationIn, spacerIn, maxPerFrame })
   // a size that has not changed is kept exactly as saved (no float drift on a rack saved before)
   const w0 = (w / 12) * gridSize, h0 = (h / 12) * gridSize
   const width = Math.abs(w0 - o.width) < 1e-6 ? o.width : w0, height = Math.abs(h0 - o.height) < 1e-6 ? o.height : h0
   const out = { lanes, palletDeep: deep, palletWIn, palletDIn, clearIn, stationIn, uprightWidth: postIn, width, height }
-  if (type === 'rack_pushback') { out.spacerIn = spacerIn; out.spacersPerJoint = p.spacersPerJoint != null ? int(p.spacersPerJoint, s.spacersPerJoint) : s.spacersPerJoint }   // (pushback-frames)
+  if (type === 'rack_pushback') { out.spacerIn = spacerIn; out.spacersPerJoint = p.spacersPerJoint != null ? int(p.spacersPerJoint, s.spacersPerJoint) : s.spacersPerJoint; out.maxPerFrame = maxPerFrame; out.longerAt = p.longerAt != null ? longerOf(p.longerAt, s.longerAt) : s.longerAt }   // (pushback-frames)
   if (p.type && p.type !== o.type) out.type = p.type
   if (p.levels != null) { out.levels = int(p.levels, s.levels); out.levelsOwn = true }
   if (p.firstIn != null) out.firstIn = nonneg(p.firstIn, s.firstIn)

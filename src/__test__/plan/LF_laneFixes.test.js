@@ -50,7 +50,7 @@ describe('(lane-fixes 0) drive-in, drive-through and pallet-flow BOMs off until 
 describe('(lane-fixes 1, 2, 3) push-back beams, anchors and the first level', () => {
   it('beams = lanes × levels × frame lines, every depth 2 to 6', () => {
     for (const D of [2, 3, 4, 5, 6]) {
-      const o = mk('rack_pushback', { palletDeep: D, height: px(D * 52) }), F = pushbackFrameLines(D)
+      const o = mk('rack_pushback', { palletDeep: D, height: px(D * 52) }), F = pushbackFrameLines(D, o.maxPerFrame)   // (pushback-config) a new rack's own max per frame
       const parts = Object.fromEntries(laneParts(o, 3, GS).map(p => [p.part, p.qty]))
       expect([D, parts.Beam]).toEqual([D, 3 * 3 * F])
       expect([D, parts.Anchor]).toEqual([D, 2 * 4 * 2 * (F - 1)])   // (pushback-frames) 2 per post, 2 posts on each of the N = F − 1 frames on each of the 4 post lines

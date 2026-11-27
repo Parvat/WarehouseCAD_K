@@ -11615,14 +11615,58 @@ describe('REG — the hand check by real clicks', () => {
       expect(await qty('Upright frame', '15 ft 8 in × 8 ft 8 in')).toBe('8')   // the new rack's 4 × 2 short frames (8 in + 3 × 60 high)
       expect(await qty('Row spacer', '6 in')).toBe('12')                       // 4 × 1 × 3
       await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
-      // 3 deep: one frame, no joint — the depth is 3 stations
+      // 3 deep: (pushback-config — the rule changed: a new rack is max 2 a frame, was 1 frame at 3 deep) 2 frames, 2 + 1, one joint
       await lnSelect(b)
       await lnType('Deep (pallets)', 3)
       const c = await lnObj(placed.id)
-      expect([c.palletDeep, in12(c.height)]).toEqual([3, 3 * 52])
-      expect(await lnCard().locator('[data-pushback-frames]').innerText()).toBe('1 frame, no row spacer')
+      expect([c.palletDeep, in12(c.height)]).toEqual([3, 3 * 52 + 6])
+      expect(await lnCard().locator('[data-pushback-frames]').innerText()).toBe('2 frames (2 deep + 1 deep) joined by 6 in row spacers')
       // the saved push-backs: their size exactly as saved
       for (const id of ['lane-1', 'lane-2']) { const o = await lnObj(id); expect(in12(o.height)).toBe(4 * 52) }
+    }, 3 * T)
+
+    onceIt('REG-pushback-config (click): (pushback-config) the push-back frame split is a dealer setting — a push-back placed from the library shows Max pallets per frame 2 and Longer frame at Front; 5 deep reads 3 frames (2 + 2 + 1), 5 stations + 2 spacers deep; Max 3 makes it 2 frames (3 + 2), a spacer less deep, one undo; Rear makes it 2 + 3, the size kept, one undo, Ctrl+Z back; Max 6 makes it 1 frame; 9 is refused; a saved push-back shows 3 and Front and is unchanged', async () => {
+      await lnOpen('lane-push')
+      const p1 = await lnObj('lane-1'), in12 = (v) => Math.round((v / 40) * 12 * 100) / 100
+      await lnView(p1)
+      const placed = await lnPlace('Push-back', { x: p1.x + p1.width / 2, y: p1.y + p1.height + 500 })
+      expect([placed.maxPerFrame, placed.longerAt]).toEqual([2, 'front'])
+      await lnView(placed); await lnSelect(placed)
+      const line = () => lnCard().locator('[data-pushback-frames]').innerText()
+      const at = (name) => lnCard().getByRole('group', { name: 'Longer frame at' }).getByRole('button', { name, exact: true })
+      expect(await lnCard().getByRole('spinbutton', { name: 'Max pallets per frame', exact: true }).inputValue()).toBe('2')
+      expect([await at('Front').getAttribute('aria-pressed'), await at('Rear').getAttribute('aria-pressed')]).toEqual(['true', 'false'])
+      // 5 deep at max 2: 3 frames, front first 2 + 2 + 1
+      await lnType('Deep (pallets)', 5)
+      expect(in12((await lnObj(placed.id)).height)).toBe(5 * 52 + 12)
+      expect(await line()).toBe('3 frames (2 deep + 2 deep + 1 deep) joined by 6 in row spacers')
+      // Max 3: 2 frames, 3 + 2 — a joint less, one undo
+      const h0 = await lnHist()
+      await lnType('Max pallets per frame', 3)
+      const a = await lnObj(placed.id)
+      expect([a.maxPerFrame, in12(a.height), Math.round(a.x), Math.round(a.y), (await lnHist()) - h0]).toEqual([3, 5 * 52 + 6, Math.round(placed.x), Math.round(placed.y), 1])
+      expect(await line()).toBe('2 frames (3 deep + 2 deep) joined by 6 in row spacers')
+      // Rear: 2 + 3, the size kept, one undo; Ctrl+Z back to Front
+      const h1 = await lnHist()
+      await at('Rear').click(); await L.page.waitForTimeout(300)
+      const b = await lnObj(placed.id)
+      expect([b.longerAt, b.height, (await lnHist()) - h1]).toEqual(['rear', a.height, 1])
+      expect(await line()).toBe('2 frames (2 deep + 3 deep) joined by 6 in row spacers')
+      await lnBlurUndo()
+      expect((await lnObj(placed.id)).longerAt).toBe('front')
+      // Max 6: 1 frame, no spacer; 9 is refused (2 to 6)
+      await lnSelect(b)
+      await lnType('Max pallets per frame', 6)
+      expect(in12((await lnObj(placed.id)).height)).toBe(5 * 52)
+      expect(await line()).toBe('1 frame, no row spacer')
+      await lnType('Max pallets per frame', 9)
+      expect((await lnObj(placed.id)).maxPerFrame).toBe(6)
+      // a saved push-back: 3 and Front on its card, nothing written, its size as saved
+      await lnView(p1); await lnSelect(p1)
+      expect(await lnCard().getByRole('spinbutton', { name: 'Max pallets per frame', exact: true }).inputValue()).toBe('3')
+      expect(await at('Front').getAttribute('aria-pressed')).toBe('true')
+      expect(await line()).toBe('2 frames (2 deep + 2 deep) joined by 0 in row spacers')
+      for (const id of ['lane-1', 'lane-2']) { const o = await lnObj(id); expect([o.maxPerFrame, in12(o.height)]).toEqual([undefined, 4 * 52]) }
     }, 3 * T)
 
     onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit (inside the run, both pick faces open), then a click on the run: 2 of 3, one red X', async () => {

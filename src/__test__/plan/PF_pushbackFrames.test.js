@@ -37,8 +37,8 @@ describe('(pushback-frames) the frames a post line', () => {
 })
 
 describe('(pushback-frames) the BOM — 1, 2 and 3 frames deep', () => {
-  it('1 frame (3 deep): P frames the full depth, no row spacer, beams front and rear, 2 × P × 2 anchors', () => {
-    const o = deepTo(3)
+  it('1 frame (3 deep at max 3): P frames the full depth, no row spacer, beams front and rear, 2 × P × 2 anchors', () => {
+    const o = deepTo(3, mk({ maxPerFrame: 3 }))   // (pushback-config) a new rack is max 2: 3 at max 3 is one frame
     expect(laneParts(o, 3, GS).map(p => [p.part, p.size, p.qty])).toEqual([
       ['Upright frame', '15 ft 8 in × 13 ft', 4],
       ['Beam', '46 in', 3 * 3 * 2],
@@ -53,7 +53,7 @@ describe('(pushback-frames) the BOM — 1, 2 and 3 frames deep', () => {
     expect([p['Upright frame 15 ft 8 in × 8 ft 8 in'], p['Row spacer'], p.Beam, p.Anchor, p['Rail set'], p.Cart, p['Entry guide']]).toEqual([8, 8, 27, 32, 9, 27, 6])
   })
   it('2 frames of different depths (5 deep): each listed by its own depth', () => {
-    const l = laneParts(deepTo(5), 3, GS).filter(p => p.part === 'Upright frame').map(p => [p.size, p.qty])
+    const l = laneParts(deepTo(5, mk({ maxPerFrame: 3 })), 3, GS).filter(p => p.part === 'Upright frame').map(p => [p.size, p.qty])
     expect(l).toEqual([['15 ft 8 in × 8 ft 8 in', 4], ['15 ft 8 in × 13 ft', 4]])
   })
   it('3 frames (the formulas at N = 3): P × 3 frames, P × 2 × J spacers, L V × 4 beams, 2 × P × 6 anchors', () => {
@@ -83,8 +83,10 @@ describe('(pushback-frames) the size: frames + spacers', () => {
   it('Row spacer length: the depth follows, the anchored corner held; 3 deep has no joint', () => {
     const o = mk(), a = { ...o, ...laneChange(o, { spacerIn: 12 }, GS) }
     expect([a.spacerIn, inch(a.height), a.x, a.y]).toEqual([12, 4 * 52 + 12, o.x, o.y])
-    expect(inch(deepTo(3, a).height)).toBe(3 * 52)
-    expect(inch(deepTo(6, a).height)).toBe(6 * 52 + 12)
+    // (pushback-config) a new rack is max 2 a frame: 3 deep is 2 frames (1 joint), 6 deep 3 frames (2 joints); at max 3, 3 deep has none
+    expect(inch(deepTo(3, a).height)).toBe(3 * 52 + 12)
+    expect(inch(deepTo(6, a).height)).toBe(6 * 52 + 24)
+    expect(inch(deepTo(3, { ...a, ...laneChange(a, { maxPerFrame: 3 }, GS) }).height)).toBe(3 * 52)
     expect(laneSpec(a, GS).stationIn).toBe(52)
   })
   it('spacers per joint: the size unchanged; whole numbers, at least 1', () => {

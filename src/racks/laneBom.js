@@ -10,7 +10,7 @@
 //     Top tie           L × (D + 1)            across each lane at every post, at the top;          size: lane width
 //     Back tie          L × V                  drive-in only: across each lane at the back, a level each; size: lane width
 //     Floor guide       2 × L                  when Floor guides is on;                              length D × S
-//   Push-back (pushback-frames, PP's option B: N frames per post line, N = 1 up to 3 deep, 2 from 4 deep — laneEngine
+//   Push-back (pushback-frames, PP's option B: N frames per post line, N = ceil(deep / Max pallets per frame) — laneEngine
 //   laneFrames — each frame 2 posts, joined at each of the N − 1 joints by row spacers; spacers per joint J, default 2)
 //     Upright frame     P × N                  listed by frame depth: overall height × (the frame's pallets × S)
 //     Row spacer        P × (N − 1) × J        listed by length (the card's Row spacer length, 6 in on a new rack)
@@ -42,7 +42,7 @@ export const LANE_BOM_PENDING = new Set(['rack_drive_in', 'rack_drive_through', 
 export const laneBomTypes = (pendingOn = LANE_BOMS_PENDING_ON) => new Set(['rack_pushback', ...(pendingOn ? LANE_BOM_PENDING : [])])
 /** Push-back: anchors per post (PP); its beam lines — front, each joint, rear: N + 1 (2 up to 3 deep, 3 from 4 deep). */
 export const ANCHORS_PER_POST = 2
-export const pushbackFrameLines = (D) => laneFrames('rack_pushback', D).length + 1
+export const pushbackFrameLines = (D, perFrame) => laneFrames('rack_pushback', D, perFrame).length + 1
 
 const isOn = (o, types) => !!o && types.has(o.type) && o.width > 0 && o.height > 0
 const inch = (v) => `${Math.round(v * 100) / 100} in`

@@ -77,8 +77,15 @@ export function LaneCard({ obj }) {
               <Field label="Row spacer length (in)"><Inches aria="Row spacer length (in)" value={s.spacerIn} onCommit={v => set({ spacerIn: v })} /></Field>
               <Field label="Spacers per joint"><NumInput aria="Spacers per joint" value={s.spacersPerJoint} min={1} step={1} onCommit={v => { if (v >= 1) set({ spacersPerJoint: Math.round(v) }) }} /></Field>
             </Grid2>
+            <Grid2>
+              <Field label="Max pallets per frame"><NumInput aria="Max pallets per frame" value={s.maxPerFrame} min={2} step={1} onCommit={v => { const k = Math.round(v); if (k >= 2 && k <= 6) set({ maxPerFrame: k }) }} /></Field>
+              <Field label="Longer frame at">
+                <Seg aria="Longer frame at" value={s.longerAt} onChange={(v) => { if (v !== s.longerAt) set({ longerAt: v }) }}
+                  options={[{ value: 'front', label: 'Front', aria: 'Front' }, { value: 'rear', label: 'Rear', aria: 'Rear' }]} />
+              </Field>
+            </Grid2>
             <span data-pushback-frames style={{ display: 'contents' }}><Hint>{s.frames.length > 1
-              ? `${s.frames.length} frames (${s.frames.map(k => `${k} deep`).join(' + ')}) joined by ${showLengthAs(n(s.spacerIn), 'in')} in row spacers`
+              ? `${s.frames.length} frames (${[...s.frames].reverse().map(k => `${k} deep`).join(' + ')}) joined by ${showLengthAs(n(s.spacerIn), 'in')} in row spacers`
               : '1 frame, no row spacer'}</Hint></span>
           </>
         )}
