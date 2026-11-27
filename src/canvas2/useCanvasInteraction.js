@@ -16,6 +16,7 @@ import { computeFpRotateHandle, fpRotateHandleHitTest, applyFpRotation } from '.
 import { resizeText, resizeCircle, snapPoint, useShapePoint, clearShapePoint, mergedOnNeighbour, useLengthEdit } from '../utils/drawTool'
 import { laneEngineOn, laneResize } from '../racks/laneEngine'   // (r3-drive-in)
 import { cantResize } from '../racks/cantilever'   // (r6-cantilever)
+import { shelfResize } from '../racks/shelving'   // (r7-shelving)
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
@@ -1296,6 +1297,8 @@ export function useCanvasInteraction({
         else if (laneEngineOn(origObj)) updates = laneResize(origObj, handle, dx, dy, st.gridSize || 40)
         // (r6-cantilever) a cantilever: whole columns (one bay each) on its end sides
         else if (origObj.type === 'rack_cantilever') updates = cantResize(origObj, handle, dx, dy, st.gridSize || 40)
+        // (r7-shelving) a shelving run: whole units on its end sides (its depth sides as before)
+        else if (origObj.type === 'rack_shelving' && shelfResize(origObj, handle, dx, dy, st.gridSize || 40)) updates = shelfResize(origObj, handle, dx, dy, st.gridSize || 40)
         else updates = applyResize(origObj, handle, dx, dy, snapFn, !!evt.shiftKey)
 
         /* Anchor-point correction for a rotated rect: growing/shrinking

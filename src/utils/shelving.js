@@ -8,6 +8,8 @@ import { lineNamer } from './lineNames'
 import { overlapMarks } from '../render/overlapOps'   // (lane-fixes 5)
 import { faceLostMarks } from '../generate/coverLost'
 import { walkwayInNow } from './zoneCheck'
+import { shelfSpec } from '../racks/shelving'   // (r7-shelving)
+import { markBoxes } from '../render/rackOps'
 
 export { SHELF_UNIT_IN, SHELF_DEPTH_IN }
 const num = (v) => String(Math.round(v * 100) / 100)
@@ -22,10 +24,12 @@ export function shelvingTag(objects, o, gridSize = 40, elevations = null) {
   if (!l) return ''
   try { return lineNamer(objects, elevations, gridSize)(l.no) || l.tag || '' } catch { return l.tag || '' }
 }
-/** "S1 · 4 units · 48×24 · 5 shelves" (without a number: from "4 units"). */
+/** "S1 · 4 units · 48×24 · 5 shelves · 7 ft" (without a number: from "4 units"); (r7-shelving) its height, and
+ *  "back-to-back" when it is two runs sharing the back (the depth: one run's). */
 export function shelvingLabel(o, gridSize = 40, tag = '') {
-  const { n, unitIn, depthIn } = shelvingUnits(o, gridSize), k = shelvesOf(o)
-  return [tag || null, `${n} unit${n === 1 ? '' : 's'}`, `${num(unitIn)}×${num(depthIn)}`, `${k} shel${k === 1 ? 'f' : 'ves'}`].filter(Boolean).join(' · ')
+  const s = shelfSpec(o, gridSize), n = s.units, k = shelvesOf(o)
+  const ft = (v) => { const f = Math.floor(Math.round(v) / 12), i = Math.round(v) - f * 12; return i ? `${f} ft ${i} in` : `${f} ft` }
+  return [tag || null, `${n} unit${n === 1 ? '' : 's'}`, `${num(s.unitIn)}×${num(s.depthIn)}`, `${k} shel${k === 1 ? 'f' : 'ves'}`, ft(s.heightIn), s.backToBack ? 'back-to-back' : null].filter(Boolean).join(' · ')
 }
 /** The change that makes its units `unitIn` wide (inches), the unit count kept — its left-top corner held. */
 export function unitWidthChange(o, unitIn, gridSize = 40) {
@@ -37,14 +41,14 @@ export function unitCountChange(o, n, gridSize = 40) {
   const { uw, unitIn } = shelvingUnits(o, gridSize)
   return { unitWidthIn: o.unitWidthIn > 0 ? o.unitWidthIn : unitIn, width: Math.max(1, Math.round(n)) * uw }
 }
-/** The change that makes it `depthIn` deep (inches). */
-export const depthChange = (depthIn, gridSize = 40) => ({ height: (depthIn / 12) * gridSize, shelfDepth: depthIn })
+/** The change that makes it `depthIn` deep (inches) — (r7-shelving) one run's depth: back-to-back, the object twice it. */
+export const depthChange = (depthIn, gridSize = 40, backToBack = false) => ({ height: ((backToBack ? 2 : 1) * depthIn / 12) * gridSize, shelfDepth: depthIn })
 
 /** (lane-fixes 5) Its usable units: a shelving run holds no pallet positions, so each unit with a red X comes off its units —
  *  covered by a zone or another rack (render/overlapOps.js overlapMarks), or lost to a short pick face (generate/coverLost.js
  *  faceLostMarks, with the plan's truck `profile`): the same marks the plan and the PDF draw. → { units, lost, usable }. */
 export function shelvingUsable(objects, o, gridSize = 40, profile = null) {
-  const { n } = shelvingUnits(o, gridSize)
+  const n = o?.backToBack ? markBoxes(o, gridSize).length : shelvingUnits(o, gridSize).n   // (r7-shelving) back-to-back: each run's units
   if (!o || !Array.isArray(objects)) return { units: n, lost: 0, usable: n }
   const seen = new Set()
   const key = (m) => `${Math.round(m.x * 100)},${Math.round(m.y * 100)}`

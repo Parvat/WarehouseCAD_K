@@ -23,7 +23,7 @@ describe('(lane-fixes 0) drive-in, drive-through and pallet-flow BOMs off until 
   it('the one setting is OFF, and holds exactly those three types', () => {
     expect(LANE_BOMS_PENDING_ON).toBe(false)
     expect([...LANE_BOM_PENDING].sort()).toEqual(['rack_drive_in', 'rack_drive_through', 'rack_pallet_flow'])
-    expect([...laneBomTypes()]).toEqual(['rack_pushback', 'rack_cantilever'])   // (r6-cantilever) + cantilever's own section
+    expect([...laneBomTypes()]).toEqual(['rack_pushback', 'rack_cantilever', 'rack_shelving'])   // (r6-cantilever) + cantilever's own section; (r7-shelving) + shelving's
   })
   it('no section in the BOM, the CSV or the xlsx; listed under "not in this BOM" as before the holiday run', () => {
     for (const name of ['lane-drive', 'lane-flow', 'lanes-horizontal', 'zone-lane']) {
@@ -43,7 +43,7 @@ describe('(lane-fixes 0) drive-in, drive-through and pallet-flow BOMs off until 
   })
   it('push-back keeps its section (walls-racks: the drive-in flagged, the push-back counted)', () => {
     const f = load('walls-racks'), b = computeBom(f.objects, f.elevations, { gridSize: GS })
-    expect(b.types.map(t => t.name)).toEqual(['Push-back racking', 'Cantilever racking'])   // (r6-cantilever) the cantilever counted too
+    expect(b.types.map(t => t.name)).toEqual(['Push-back racking', 'Cantilever racking', 'Shelving racking'])   // (r6-cantilever) the cantilever counted too; (r7-shelving) the shelving run too
   })
 })
 

@@ -11262,7 +11262,7 @@ describe('REG — the hand check by real clicks', () => {
       const card = L.page.locator('[data-island="right-card"]')
       expect((await card.innerText()).replace(/\s+/g, ' ')).toContain('S1 · 4 units · 48×24 · 5 shelves')
       const pills = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('Text').filter(t => t.isVisible()).map(t => t.text()) })
-      expect(pills.some(t => t === 'S1 · 4 units · 48×24 · 5 shelves')).toBe(true)
+      expect(pills.some(t => t === 'S1 · 4 units · 48×24 · 5 shelves · 7 ft')).toBe(true)   // (r7-shelving) + its height
       // Unit width: its list attached to the field; 36
       const field = card.getByRole('combobox', { name: 'Unit width (in)' })
       await card.getByRole('button', { name: 'Unit width (in) sizes' }).click(); await L.page.waitForTimeout(200)
@@ -11726,6 +11726,51 @@ describe('REG — the hand check by real clicks', () => {
       expect([w.width, w.height, w.towers]).toEqual([480, 253.33333333333331, [36, 36, 36, 36]])
       await lnView(w); await lnSelect(w)
       expect(await lnText()).toMatch(/4 columns · 3 bays · 3 levels · double-sided/)
+    }, 3 * T)
+
+    onceIt('REG-r7-shelving (click): (r7-shelving) a shelving run placed from the library is 4 units of 48 x 24, 5 shelves, 7 ft, back to Select; its card reads "S2 · 4 units · 48×24 · 5 shelves · 7 ft"; Height typed in feet (8 ft) is one undo and changes no size; Back-to-back on doubles its depth (one undo) and its label says back-to-back; the end handle dragged a unit adds a whole unit (one undo, Ctrl+Z back); the BOM tab has a Shelving racking section (Post by height, Long beam, Short beam, Deck — doubled back-to-back); save and reload keep every field; the saved run is unchanged', async () => {
+      await lnOpen('shelving')
+      const s1 = await lnObj('shelf-1'), in12 = (v) => Math.round((v / 40) * 12 * 100) / 100
+      await lnView(s1)
+      const placed = await lnPlace('Shelving', { x: s1.x + s1.width / 2, y: s1.y + s1.height + 300 })
+      expect([placed.type, placed.unitWidthIn, placed.shelves, placed.heightIn, placed.backToBack, in12(placed.width), in12(placed.height), await L.S('return S.getState().activeTool')]).toEqual(['rack_shelving', 48, 5, 84, false, 192, 24, 'select'])
+      await lnView(placed, 0.5); await lnSelect(placed)
+      expect(await lnText()).toMatch(/S\d · 4 units · 48×24 · 5 shelves · 7 ft/)
+      // Height in feet: one undo, no size change
+      let h = await lnHist()
+      const ht = lnCard().getByRole('combobox', { name: 'Height (in)' })
+      await ht.click(); await ht.fill('8 ft'); await ht.press('Enter'); await L.page.waitForTimeout(300)
+      let o = await lnObj(placed.id)
+      expect([o.heightIn, o.width, o.height, (await lnHist()) - h]).toEqual([96, placed.width, placed.height, 1])
+      // Back-to-back: one undo, twice as deep
+      h = await lnHist()
+      await lnCard().getByRole('switch', { name: 'Back-to-back' }).or(lnCard().getByRole('button', { name: 'Back-to-back' })).first().click(); await L.page.waitForTimeout(300)
+      o = await lnObj(placed.id)
+      expect([o.backToBack, in12(o.height), Math.round(o.x), Math.round(o.y), (await lnHist()) - h]).toEqual([true, 48, Math.round(placed.x), Math.round(placed.y), 1])
+      expect(await lnText()).toMatch(/4 units · 48×24 · 5 shelves · 8 ft · back-to-back/)
+      // the end handle: a whole unit more, one undo; Ctrl+Z back
+      await L.page.keyboard.press('Escape'); await lnSelect(o)
+      h = await lnHist(); await lnHandle(placed.id, 'mr', 160 * 1.2, 0)
+      o = await lnObj(placed.id)
+      expect([Math.round(o.width / 160), Math.round(o.x), (await lnHist()) - h]).toEqual([5, Math.round(placed.x), 1])
+      await lnBlurUndo()
+      expect(Math.round((await lnObj(placed.id)).width / 160)).toBe(4)
+      // the BOM tab: its own section, back-to-back doubled
+      await lnSelect(await lnObj(placed.id))
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      const q = (part, size) => L.page.locator(`[data-bom-card="rack_shelving"] [data-part="${part}"][data-size="${size}"]`).getAttribute('data-qty')
+      expect(await q('Post', '8 ft')).toBe(String((4 + 1) * 2 * 2))
+      expect(await q('Deck', '48 × 24 in')).toBe(String(4 * 5 * 2 + 4 * 5 + 4 * 5 * 2))   // the new pair + shelf-1 + shelf-2 (a pair)
+      await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
+      // save and reload
+      const saved = await L.S('return SL.serializeScene(S.getState())')
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
+      const r = await lnObj(placed.id)
+      expect([r.heightIn, r.backToBack, r.unitWidthIn, in12(r.width), in12(r.height)]).toEqual([96, true, 48, 192, 48])
+      // the saved run (walls-racks): unchanged
+      L = await B.openLayout(app, B.fixture('walls-racks'))
+      const w = await lnObj('w-west')
+      expect([w.width, w.height, w.heightIn, w.backToBack]).toEqual([640, 80, undefined, undefined])
     }, 3 * T)
 
     onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit (inside the run, both pick faces open), then a click on the run: 2 of 3, one red X', async () => {

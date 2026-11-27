@@ -20,6 +20,8 @@ import { useColumnCheck } from '../../generate/useColumnCheck'   // (lane-fixes 
 import { LaneCard } from '../../studio/LaneCard'   // (r3-drive-in)
 import { laneEngineOn } from '../../racks/laneEngine'
 import { CantileverCard } from '../../studio/CantileverCard'   // (r6-cantilever)
+import { Inches } from '../../studio/LaneCard'
+import { shelfSpec, backToBackChange, SHELF_HEIGHT_IN } from '../../racks/shelving'   // (r7-shelving)
 import { nanoid as newIdForZone } from 'nanoid'
 
 /** (dealer audit; d1-final, the mockups' cards) A drawn shape's style after drawing — the Draw bar's own controls:
@@ -670,7 +672,7 @@ function SizeBlock({ obj, gridSize }) {
  *  its left-top corner held. A size that is not a standard one (a unit saved before) shows as it is, marked Custom. */
 function ShelvingFields({ obj, gridSize }) {
   const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
-  const { n, unitIn, depthIn } = shelvingUnits(obj, gridSize)
+  const { units: n, unitIn, depthIn, heightIn, backToBack } = shelfSpec(obj, gridSize)   // (r7-shelving) one run's depth
   // (lane-fixes 5) the units a zone or a rack covers (a red X each) come off usable
   const objects = useCanvasStore(s => s.objects), { profile } = useColumnCheck()   // the plan's truck: its face X marks too
   const use = shelvingUsable(objects, obj, gridSize, profile)
@@ -683,12 +685,15 @@ function ShelvingFields({ obj, gridSize }) {
       </Grid2>
       <Grid2>
         <Field label={<span style={{ display: 'flex', alignItems: 'center' }}>Unit width (in){tag(unitIn, SHELF_UNIT_IN)}</span>}>
-          <SizeInput inches={unitIn} aria="Unit width (in)" options={SHELF_UNIT_IN} custom onCommit={v => { if (v > 0) set(unitWidthChange(obj, v, gridSize)) }} />
+          <Inches value={unitIn} aria="Unit width (in)" options={SHELF_UNIT_IN} onCommit={v => { if (v > 0) set(unitWidthChange(obj, v, gridSize)) }} />
         </Field>
         <Field label={<span style={{ display: 'flex', alignItems: 'center' }}>Depth (in){tag(depthIn, SHELF_DEPTH_IN)}</span>}>
-          <SizeInput inches={depthIn} aria="Depth (in)" options={SHELF_DEPTH_IN} custom onCommit={v => { if (v > 0) set(depthChange(v, gridSize)) }} />
+          <Inches value={depthIn} aria="Depth (in)" options={SHELF_DEPTH_IN} onCommit={v => { if (v > 0) set(depthChange(v, gridSize, backToBack)) }} />
         </Field>
+        {/* (r7-shelving) steel boltless: its height, and back-to-back (two runs sharing the back) */}
+        <Field label="Height (in)"><Inches value={heightIn} aria="Height (in)" options={SHELF_HEIGHT_IN} onCommit={v => { if (v > 0) set({ heightIn: v }) }} /></Field>
       </Grid2>
+      <ToggleRow label="Back-to-back" aria="Back-to-back" on={backToBack} onClick={() => set(backToBackChange(obj, !backToBack, gridSize))} />
       <div data-shelving-usable={use.usable} style={{ fontSize: 12, color: use.lost ? C.text : C.muted }}>
         {`${use.usable} of ${use.units} unit${use.units === 1 ? '' : 's'} usable`}{use.lost ? ` · ${use.lost} lost` : ''}
       </div>

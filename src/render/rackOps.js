@@ -407,6 +407,8 @@ export function rackCantileverOps(obj, gridSize) {
 export function markBoxes(obj, gridSize = 40) {
   if (obj?.type === 'rack_shelving') {
     const { n, uw } = shelvingUnits(obj, gridSize)
+    // (r7-shelving) back-to-back: two runs sharing the back — a box per unit on each
+    if (obj.backToBack) return [0, 1].flatMap(r => Array.from({ length: n }, (_, i) => ({ x: obj.x + i * uw, y: obj.y + r * obj.height / 2, w: uw, h: obj.height / 2 })))
     return Array.from({ length: n }, (_, i) => ({ x: obj.x + i * uw, y: obj.y, w: uw, h: obj.height }))
   }
   if (obj?.type === 'rack_cantilever') {
@@ -466,6 +468,7 @@ export function rackShelvingOps(obj, gridSize) {
   const ops = [body(x, y, w, h, c.line)]
   const segs = []
   for (let i = 1; i < n; i++) segs.push(x + i * uw, y, x + i * uw, y + h)
+  if (obj.backToBack) segs.push(x, y + h / 2, x + w, y + h / 2)   // (r7-shelving) the shared back
   const lo = linesOp(segs, c.line, RACK_LINE.hair, { name: 'shelf-units' })
   if (lo) ops.push(lo)
   return ops

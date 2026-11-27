@@ -127,8 +127,8 @@ describe('rack-round3 6 — shelving sizes and shelf count', () => {
     expect(rackDrawOps(unit(), { gridSize: GS }).filter(o => o.op === 'text')).toEqual([])
   })
   it('the label: "S1 · 4 units · 48×24 · 5 shelves"', () => {
-    expect(shelvingLabel(unit(), GS, 'S1')).toBe('S1 · 4 units · 48×24 · 5 shelves')
-    expect(shelvingLabel(unit({ shelves: 1, width: 120, unitWidthIn: 36, height: 40 }), GS, 'S2')).toBe('S2 · 1 unit · 36×12 · 1 shelf')
+    expect(shelvingLabel(unit(), GS, 'S1')).toBe('S1 · 4 units · 48×24 · 5 shelves · 7 ft')   // (r7-shelving) + its height (7 ft unless set)
+    expect(shelvingLabel(unit({ shelves: 1, width: 120, unitWidthIn: 36, height: 40 }), GS, 'S2')).toBe('S2 · 1 unit · 36×12 · 1 shelf · 7 ft')
   })
   it('unit width keeps the count; count keeps the width; depth', () => {
     expect(unitWidthChange(unit(), 36, GS)).toEqual({ unitWidthIn: 36, width: 4 * 120 })

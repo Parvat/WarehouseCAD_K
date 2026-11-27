@@ -96,6 +96,7 @@ export function laneFaceGaps(objects, { gridSize = 40, profile = MHE_PROFILES.re
       const backed = (s) => { const m = clearInFront(faceLine(f, normalOf(s, rot)), backPx + E, ctx); return (m.kind === 'wall' || m.kind === 'rack') && m.d <= backPx + E }
       const bt = backed('top'), bb = backed('bottom')
       sides = bt && !bb ? ['bottom'] : bb && !bt ? ['top'] : bt && bb ? ['bottom'] : ['top', 'bottom']
+      if (r.backToBack) sides = ['top', 'bottom']   // (r7-shelving) two runs sharing the back: each front is its run's pick side
     }
     const nSides = sides.length
     for (const side of sides) {

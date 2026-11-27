@@ -106,8 +106,9 @@ export function faceLostMarks(objects, { gridSize = 40, profile = MHE_PROFILES.r
   for (const [id, gs] of by) {
     const r = gs[0].rack
     if (!isRack(r)) continue
-    const dbl = r.type === 'rack_cantilever' && (r.doubleSided ?? true)
-    if ((r.type === 'rack_drive_through' || (r.type === 'rack_shelving' && gs[0].nSides === 2)) && gs.length < 2) continue
+    // (r7-shelving) a back-to-back shelving pair: each short front loses its own run's units (as a double cantilever's side)
+    const dbl = (r.type === 'rack_cantilever' && (r.doubleSided ?? true)) || (r.type === 'rack_shelving' && !!r.backToBack)
+    if ((r.type === 'rack_drive_through' || (r.type === 'rack_shelving' && !r.backToBack && gs[0].nSides === 2)) && gs.length < 2) continue
     // (rack-xmarks) one X per lost position box: a shelving unit, a cantilever arm bay, a pallet slot (markBoxes, turned
     // as drawn — was: a cantilever's whole reach, a turned shelving run's whole footprint)
     const slots = worldBoxes(r, markBoxes(r, gridSize))
