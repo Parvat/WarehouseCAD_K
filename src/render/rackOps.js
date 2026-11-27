@@ -34,6 +34,7 @@ import { hasEmpty, isEmptySide } from '../utils/bayEmpty'
 import { deepOf, deepGapOf } from '../utils/deep'   // (r2-double-deep)
 import { positionsPerBeam } from '../utils/palletFit'
 import { rackColors, RACK_FAMILIES } from './rackFamily'
+import { laneSpec } from '../racks/laneEngine'   // (pushback-frames)
 
 /* The older names, kept for the code and tests that read them: the pallet family now (rack-design). */
 export const RACK_PALETTE = {
@@ -263,12 +264,16 @@ const laneDeep = (obj) => Math.max(1, Math.min(Math.round(obj.palletDeep || 4), 
 function laneOps(obj, gridSize, { faces, arrows, posts }) {
   const { upW, laneW, postXs, laneCx } = laneGeom(obj, gridSize)
   const { x, y, width: w, height: h } = obj
-  const c = colorsOf(obj), deep = laneDeep(obj), sd = h / deep, inset = inch(SLOT_INSET_IN, gridSize)
+  // (pushback-frames) a push-back of more than one frame: a row spacer's gap at each joint, the slots its frames' stations
+  const fs = obj.type === 'rack_pushback' ? laneSpec(obj, gridSize) : null
+  const frames = fs && fs.deep === laneDeep(obj) ? fs.frames : null, gap = frames && frames.length > 1 ? inch(fs.spacerIn, gridSize) : 0
+  const frameOf = (k) => { if (!gap) return 0; let i = 0, n = frames[0]; while (k >= n && i < frames.length - 1) n += frames[++i]; return i }
+  const c = colorsOf(obj), deep = laneDeep(obj), sd = gap ? (h - (frames.length - 1) * gap) / deep : h / deep, inset = inch(SLOT_INSET_IN, gridSize)
   const ops = [body(x, y, w, h, c.line)]
 
   // the pallet slots: each lane, each pallet deep
   const slots = []
-  if (laneW > inset * 2 && sd > inset * 2) for (const px of postXs.slice(0, -1)) for (let k = 0; k < deep; k++) slots.push({ x: px + upW + inset, y: y + k * sd + inset, w: laneW - inset * 2, h: sd - inset * 2 })
+  if (laneW > inset * 2 && sd > inset * 2) for (const px of postXs.slice(0, -1)) for (let k = 0; k < deep; k++) slots.push({ x: px + upW + inset, y: y + k * sd + frameOf(k) * gap + inset, w: laneW - inset * 2, h: sd - inset * 2 })
   const so = slotsOp(slots, c.tint)
   if (so) ops.push(so)
 

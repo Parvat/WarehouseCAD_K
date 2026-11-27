@@ -20,7 +20,8 @@ Platform (PL1–PL5) after its open questions are answered (FEATURES.md, Platfor
 - **Lane rack BOMs need dealer details before they are switched on** (PP 2026-11-27): drive-in, drive-through and pallet
   flow — part names, frame spacing, ties, guides and brakes differ per dealer. Collect them, then turn on
   `LANE_BOMS_PENDING_ON` in `racks/laneBom.js` (one setting; the formulas are kept and tested) and check each part against
-  the dealer's sheet. Push-back's BOM is on (beams lanes × levels × frame lines, 2 anchors per post — lane-fixes).
+  the dealer's sheet. Push-back's BOM is on (lane-fixes; pushback-frames, PP option B: short frames per post line joined by
+  row spacers — frames P × N by depth, row spacers P × (N − 1) × spacers per joint, beams L × V × (N + 1), anchors 2 × P × 2N).
 - **Parked (PP 2026-11-27, not to build yet):** a rack-type choice in Generate, together with Generate option B — its own spec.
 - **R3 / R4 (lane racks) — built, merged 2026-11-27 (holiday-run, master 7405881); PP's answers built on lane-fixes** (2026-11-26 holiday run; reports r3-drive-in, r4-push-back,
   r5-pallet-flow): one lane-rack engine (`racks/laneEngine.js`) for drive-in, drive-through, push-back and pallet flow —

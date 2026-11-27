@@ -10,13 +10,15 @@
 //     Top tie           L × (D + 1)            across each lane at every post, at the top;          size: lane width
 //     Back tie          L × V                  drive-in only: across each lane at the back, a level each; size: lane width
 //     Floor guide       2 × L                  when Floor guides is on;                              length D × S
-//   Push-back (frame lines F = 2 up to 3 deep, 3 from 4 deep)
-//     Upright frame     P × F                  size: overall height × D × S
-//     Beam              L × V × F              (lane-fixes) one at each frame line under each lane, a level each; size: lane width
+//   Push-back (pushback-frames, PP's option B: N frames per post line, N = 1 up to 3 deep, 2 from 4 deep — laneEngine
+//   laneFrames — each frame 2 posts, joined at each of the N − 1 joints by row spacers; spacers per joint J, default 2)
+//     Upright frame     P × N                  listed by frame depth: overall height × (the frame's pallets × S)
+//     Row spacer        P × (N − 1) × J        listed by length (the card's Row spacer length, 6 in on a new rack)
+//     Beam              L × V × (N + 1)        front, each joint, rear — under each lane, a level each; size: lane width
 //     Rail set          L × V
 //     Cart              (D − 1) × L × V        the front pallet sits on the rails
 //     Entry guide       2 × L                  at the LOAD · PICK face, floor level
-//     Anchor            2 × P × F              (lane-fixes) 2 per post (one upright leg at the floor): each post line, each frame line
+//     Anchor            2 × P × 2N             2 per post, 2 posts a frame
 //   (lane-fixes) Every level counts, the bottom one too: a new push-back's first beam is at 8 in with rails on it.
 //   Pallet flow (frame lines F = ceil(D / 2) + 1)
 //     Upright frame     P × F                  size: overall height × D × S
@@ -25,7 +27,7 @@
 //     Speed controller  2 × L × V × ceil(D / 2)  a brake every two pallets on each track
 //     Pallet stop       L × V                  at the PICK end
 //     Entry guide       2 × L × V              at the LOAD end
-import { laneSpec, LANE_NAMES } from './laneEngine'
+import { laneSpec, laneFrames, LANE_NAMES } from './laneEngine'
 import { rackNumbersNow } from '../utils/rackLines'
 import { lineNamer } from '../utils/lineNames'
 import { laneLevels } from '../utils/capacity'
@@ -38,13 +40,29 @@ export const LANE_BOMS_PENDING_ON = false
 export const LANE_BOM_PENDING = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pallet_flow'])
 /** The lane types whose BOM section is on. */
 export const laneBomTypes = (pendingOn = LANE_BOMS_PENDING_ON) => new Set(['rack_pushback', ...(pendingOn ? LANE_BOM_PENDING : [])])
-/** Push-back: anchors per post (PP), frame lines (2 up to 3 deep, 3 from 4 deep). */
+/** Push-back: anchors per post (PP); its beam lines — front, each joint, rear: N + 1 (2 up to 3 deep, 3 from 4 deep). */
 export const ANCHORS_PER_POST = 2
-export const pushbackFrameLines = (D) => (D <= 3 ? 2 : 3)
+export const pushbackFrameLines = (D) => laneFrames('rack_pushback', D).length + 1
 
 const isOn = (o, types) => !!o && types.has(o.type) && o.width > 0 && o.height > 0
 const inch = (v) => `${Math.round(v * 100) / 100} in`
 const ftIn = (v) => { const t = Math.round(v), f = Math.floor(t / 12), i = t - f * 12; return i ? `${f} ft ${i} in` : `${f} ft` }
+
+/** (pushback-frames) A push-back's parts from its spec `s` (laneSpec: lanes, deep, frames, stationIn, spacerIn,
+ *  spacersPerJoint, laneWIn, heightIn) and its levels V — N = s.frames.length short frames per post line. */
+export function pushbackParts(s, V) {
+  const L = s.lanes, D = s.deep, P = L + 1, N = s.frames.length, h = ftIn(s.heightIn), frames = new Map()
+  for (const k of s.frames) { const size = `${h} × ${ftIn(k * s.stationIn)}`; frames.set(size, (frames.get(size) || 0) + P) }
+  return [
+    ...[...frames].map(([size, qty]) => ({ part: 'Upright frame', size, qty })),   // P × N, by frame depth
+    ...(N > 1 ? [{ part: 'Row spacer', size: inch(s.spacerIn), qty: P * (N - 1) * s.spacersPerJoint }] : []),
+    { part: 'Beam', size: inch(s.laneWIn), qty: L * V * (N + 1) },   // front, each joint, rear
+    { part: 'Rail set', size: `${D} deep`, qty: L * V },
+    { part: 'Cart', size: '', qty: (D - 1) * L * V },
+    { part: 'Entry guide', size: '', qty: 2 * L },
+    { part: 'Anchor', size: '', qty: ANCHORS_PER_POST * P * 2 * N },   // 2 per post, 2 posts a frame
+  ]
+}
 
 /** One rack's parts: [{ part, size, qty }] (the formulas above). `levels`: its levels as counted (capacity's). */
 export function laneParts(o, levels, gridSize = 40) {
@@ -60,17 +78,7 @@ export function laneParts(o, levels, gridSize = 40) {
       ...(s.floorGuides ? [{ part: 'Floor guide', size: ftIn(run), qty: 2 * L }] : []),
     ]
   }
-  if (o.type === 'rack_pushback') {
-    const F = pushbackFrameLines(D)
-    return [
-      { part: 'Upright frame', size: `${h} × ${ftIn(run)}`, qty: P * F },
-      { part: 'Beam', size: lane, qty: L * V * F },   // (lane-fixes) a beam at every frame line under each lane, a level each
-      { part: 'Rail set', size: `${D} deep`, qty: L * V },
-      { part: 'Cart', size: '', qty: (D - 1) * L * V },
-      { part: 'Entry guide', size: '', qty: 2 * L },
-      { part: 'Anchor', size: '', qty: ANCHORS_PER_POST * P * F },   // (lane-fixes) 2 per post: a post at each post line, each frame line
-    ]
-  }
+  if (o.type === 'rack_pushback') return pushbackParts(s, V)
   if (o.type === 'rack_pallet_flow') {
     const F = Math.ceil(D / 2) + 1
     return [
@@ -101,15 +109,16 @@ export function laneBom(objects, T, { gridSize = 40, types } = {}) {
     const racks = list.filter(o => o.type === type).map(o => ({ o, tag: tagOf.get(o.id) || '' }))
       .sort((a, b) => (a.tag.length - b.tag.length) || a.tag.localeCompare(b.tag))
     if (!racks.length) continue
-    const m = new Map()
+    const m = new Map(), partAt = new Map()
     for (const { o, tag } of racks) for (const p of laneParts(o, laneLevels(o, levelsAt), gridSize)) {
       if (!(p.qty > 0)) continue
       const key = p.part + '|' + p.size
+      if (!partAt.has(p.part)) partAt.set(p.part, partAt.size)
       if (!m.has(key)) m.set(key, { key, part: p.part, size: p.size, qty: 0, ids: [], rows: {}, at: m.size })
       const l = m.get(key)
       l.qty += p.qty; if (!l.ids.includes(o.id)) l.ids.push(o.id); l.rows[tag] = (l.rows[tag] || 0) + p.qty
     }
-    out.push({ id: type, name: LANE_NAMES[type] + ' racking', rows: racks.map(r => ({ tag: r.tag, id: r.o.id })), lines: [...m.values()].sort((a, b) => a.at - b.at).map(({ at, ...l }) => l) })
+    out.push({ id: type, name: LANE_NAMES[type] + ' racking', rows: racks.map(r => ({ tag: r.tag, id: r.o.id })), lines: [...m.values()].sort((a, b) => (partAt.get(a.part) - partAt.get(b.part)) || (a.at - b.at)).map(({ at, ...l }) => l) })   // (pushback-frames) a part's sizes together (frames by depth), in the order the parts first come
   }
   return out
 }

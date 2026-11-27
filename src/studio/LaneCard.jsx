@@ -71,6 +71,17 @@ export function LaneCard({ obj }) {
           <Field label="Deep (pallets)"><NumInput aria="Deep (pallets)" value={s.deep} min={d?.minDeep || 1} step={1} onCommit={v => { if (v >= 1) set({ deep: Math.round(v) }) }} /></Field>
         </Grid2>
         {d?.minDeep && <Hint>{`${d.minDeep} to ${d.maxDeep} deep.`}</Hint>}
+        {obj.type === 'rack_pushback' && (
+          <>
+            <Grid2>
+              <Field label="Row spacer length (in)"><Inches aria="Row spacer length (in)" value={s.spacerIn} onCommit={v => set({ spacerIn: v })} /></Field>
+              <Field label="Spacers per joint"><NumInput aria="Spacers per joint" value={s.spacersPerJoint} min={1} step={1} onCommit={v => { if (v >= 1) set({ spacersPerJoint: Math.round(v) }) }} /></Field>
+            </Grid2>
+            <span data-pushback-frames style={{ display: 'contents' }}><Hint>{s.frames.length > 1
+              ? `${s.frames.length} frames (${s.frames.map(k => `${k} deep`).join(' + ')}) joined by ${showLengthAs(n(s.spacerIn), 'in')} in row spacers`
+              : '1 frame, no row spacer'}</Hint></span>
+          </>
+        )}
         {obj.type === 'rack_drive_in' && (
           <Field label="Entry face">
             <Btn kind="inset" aria-label="Flip entry face" title="The ENTRY face to the other end (the rack turns 180°, its footprint stays)"

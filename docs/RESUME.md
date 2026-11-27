@@ -36,6 +36,12 @@ Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
 9. **Zoom p95 53 ms (CPU slowed 4×):** accepted. Do not cache racks as an image.
 10. **Older customer files:** PP will add some later. Nothing to do now.
 
+**pushback-frames (2026-11-27, branch, from lane-fixes — master did not have lane-fixes yet; it carries it):** PP chose
+option B — a deep push-back is short frames tied with row spacers, not one frame the full depth. 1 frame a post line up
+to 3 deep, 2 from 4 deep; the card's Row spacer length (6 in) and Spacers per joint (2); the depth = frames + spacers, so
+the drawing (a gap at the joint), the aisle check and the dimensions follow. Saved push-backs keep their size: their
+spacer reads 0 in (what fits). Report: [reports/pushback-frames.md](reports/pushback-frames.md).
+
 **lane-fixes (2026-11-27, branch, from master 7405881):** those answers (items 0–7) and pdf-parity (item 8: the PDF prints
 the rack numbers, and screen-pixel line weights at 0.25 mm a px). Report: [reports/lane-fixes.md](reports/lane-fixes.md).
 

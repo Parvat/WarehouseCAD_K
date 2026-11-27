@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { laneSpec, laneNew, laneChange, laneResize, laneSizeIn } from '../../racks/laneEngine'
+const laneChange0 = (type, deep) => { const o = { id: 'r', type, x: 0, y: 0, rotation: 0, ...laneNew(type, 40) }; return { ...o, ...laneChange(o, { deep }, 40) } }
 import { laneParts, laneBom, laneBomTypes } from '../../racks/laneBom'
 import { getRackCapacity, laneLevels } from '../../utils/capacity'
 import { computeBom } from '../../utils/bom'
@@ -132,7 +133,7 @@ describe('lane BOM — the formulas (L 4, D 5, V 4)', () => {
 describe('(r4-push-back) push-back on the lane engine', () => {
   it('a new push-back: 3 lanes × 4 deep × 3 levels, first beam at 8 in (lane-fixes 3, PP: rails on it, the bottom level push-back too); 36 positions', () => {
     const o = mk('rack_pushback'), s = laneSpec(o, GS)
-    expect([s.lanes, s.deep, s.levels, s.firstIn, s.laneWIn, s.stationIn, inch(o.width), inch(o.height)]).toEqual([3, 4, 3, 8, 46, 52, 3 * 46 + 4 * 3, 4 * 52])
+    expect([s.lanes, s.deep, s.levels, s.firstIn, s.laneWIn, s.stationIn, inch(o.width), inch(o.height)]).toEqual([3, 4, 3, 8, 46, 52, 3 * 46 + 4 * 3, 4 * 52 + 6])   // (pushback-frames) 2 frames of 2 deep + a 6 in row spacer
     expect(getRackCapacity(o).total).toBe(36)
   })
   it('deep kept within 2 to 6 — typed and by the handle', () => {
@@ -141,17 +142,18 @@ describe('(r4-push-back) push-back on the lane engine', () => {
     expect(laneResize(o, 'bc', 0, px(52) * 5, GS).palletDeep).toBe(6)
     expect(laneResize(o, 'bc', 0, -px(52) * 5, GS).palletDeep).toBe(2)
   })
-  it('the BOM formulas (L 3, D 4, V 3; frame lines 3 from 4 deep, 2 up to 3)', () => {
+  it('the BOM formulas (L 3, D 4, V 3; pushback-frames: 2 short frames a post line, row spacers at the joint)', () => {
     const o = mk('rack_pushback')
     expect(laneParts(o, 3, GS).map(p => [p.part, p.size, p.qty])).toEqual([
-      ['Upright frame', '15 ft 8 in × 17 ft 4 in', 4 * 3],   // P × F (8 in first beam + 3 × 60)
-      ['Beam', '46 in', 3 * 3 * 3],                      // (lane-fixes 1) L V F — was 2 L V, short from 4 deep
+      ['Upright frame', '15 ft 8 in × 8 ft 8 in', 4 * 2],    // P × N, each frame its own depth (2 × 52) — was P × F full depth
+      ['Row spacer', '6 in', 4 * 1 * 2],                 // P × (N − 1) × spacers per joint
+      ['Beam', '46 in', 3 * 3 * 3],                      // L V (N + 1): front, joint, rear
       ['Rail set', '4 deep', 3 * 3],                     // L V
       ['Cart', '', 3 * 3 * 3],                           // (D − 1) L V
       ['Entry guide', '', 2 * 3],                        // 2 L
-      ['Anchor', '', 2 * 4 * 3],                         // (lane-fixes 2) 2 per post, P × F posts
+      ['Anchor', '', 2 * 4 * 2 * 2],                     // 2 per post, 2 posts a frame: 2 × P × 2N
     ])
-    expect(laneParts(mk('rack_pushback', { palletDeep: 3, height: px(3 * 52) }), 3, GS)[0].qty).toBe(4 * 2)
+    expect(laneParts(laneChange0('rack_pushback', 3), 3, GS)[0].qty).toBe(4)   // 3 deep: one frame a post line
   })
   it('the BOM: a Push-back racking section under P1, P2', () => {
     const f = load('lane-push'), b = computeBom(f.objects, f.elevations, { gridSize: GS })

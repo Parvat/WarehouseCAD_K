@@ -28,9 +28,24 @@ const BASE = { palletWIn: 40, palletDIn: 48, clearIn: 3, stationAddIn: 4, postIn
 export const LANE_DEFAULTS = {
   rack_drive_in:      { ...BASE, lanes: 4, deep: 5, levels: 4, firstIn: 8, floorGuides: true },
   rack_drive_through: { ...BASE, lanes: 4, deep: 5, levels: 4, firstIn: 8, floorGuides: true },
-  rack_pushback:      { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, newFirstIn: 8, minDeep: 2, maxDeep: 6 },   // (lane-fixes) a new one: first beam 8 in, rails on it; a saved one without the field reads 0
+  rack_pushback:      { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, newFirstIn: 8, minDeep: 2, maxDeep: 6, spacerIn: 6, spacersPerJoint: 2 },   // (lane-fixes) a new one: first beam 8 in, rails on it; a saved one without the field reads 0
   rack_pallet_flow:   { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, pitchInPerFt: 0.375 },
 }
+/** (pushback-frames) PUSH-BACK FRAMES — PP's option B: a deep push-back is two short frames tied with row spacers, not
+ *  one frame the full depth. A frame carries up to PUSHBACK_PER_FRAME pallets: 2 to 3 deep = 1 frame, 4 to 6 deep = 2
+ *  frames (N = ceil(deep / 3)). The pallets split as evenly as they go, an odd one on the front (bottom, LOAD) frame.
+ *  The rack's depth = its frames' depths (pallets × depth station) + a row spacer length at each joint. */
+export const PUSHBACK_PER_FRAME = 3
+/** Each frame's pallets, rear (top) to front (bottom) — [4] → [2, 2], [5] → [2, 3]; another type: one frame. */
+export function laneFrames(type, deep, perFrame = PUSHBACK_PER_FRAME) {
+  const D = Math.max(1, Math.round(deep || 1))
+  if (type !== 'rack_pushback') return [D]
+  const N = Math.max(1, Math.ceil(D / perFrame)), base = Math.floor(D / N), extra = D - base * N
+  return Array.from({ length: N }, (_, i) => base + (i >= N - extra ? 1 : 0))
+}
+/** The joints between frames (each a row spacer length deep). */
+export const laneJoints = (type, deep) => laneFrames(type, deep).length - 1
+
 /** Each type's name in words (the card, the BOM). */
 export const LANE_NAMES = { rack_drive_in: 'Drive-in', rack_drive_through: 'Drive-through', rack_pushback: 'Push-back', rack_pallet_flow: 'Pallet flow' }
 
@@ -46,7 +61,18 @@ export function laneSpec(o, gridSize = 40) {
   const postIn = pos(o.uprightWidth, 4), palletWIn = pos(o.palletWIn, 40), palletDIn = pos(o.palletDIn, 48)
   const wIn = ((o.width || 0) / gridSize) * 12, hIn = ((o.height || 0) / gridSize) * 12
   const clearIn = o.clearIn != null ? nonneg(o.clearIn, d.clearIn) : Math.max(0, r2(((wIn - (lanes + 1) * postIn) / lanes - palletWIn) / 2))
-  const stationIn = o.stationIn != null ? pos(o.stationIn, palletDIn + d.stationAddIn) : (hIn > 0 ? r2(hIn / deep) : palletDIn + d.stationAddIn)
+  // (pushback-frames) a push-back saved without a spacer keeps its outer size exactly: its spacer is what fits — the depth
+  // over its stations, split over its joints (0 on every rack saved so far); a rack with no joint reads the default
+  const J = laneJoints(o?.type, deep), spDef = d.spacerIn ?? 0
+  let stationIn, spacerIn
+  if (o.stationIn != null) {
+    stationIn = pos(o.stationIn, palletDIn + d.stationAddIn)
+    spacerIn = o.spacerIn != null ? nonneg(o.spacerIn, spDef) : (J ? Math.max(0, r2((hIn - deep * stationIn) / J)) : spDef)
+  } else {
+    spacerIn = o.spacerIn != null ? nonneg(o.spacerIn, spDef) : (J ? 0 : spDef)
+    stationIn = hIn > 0 ? r2((hIn - J * spacerIn) / deep) : palletDIn + d.stationAddIn
+  }
+  const spacersPerJoint = int(o.spacersPerJoint, d.spacersPerJoint ?? 2)
   const levels = int(o.levels, 1)
   const firstIn = nonneg(o.firstIn, d.firstIn), spacingIn = pos(o.spacingIn, d.spacingIn)
   const heightIn = o.heightIn != null ? pos(o.heightIn, firstIn + levels * spacingIn) : firstIn + levels * spacingIn
@@ -54,26 +80,28 @@ export function laneSpec(o, gridSize = 40) {
     type: o.type, lanes, deep, levels, palletWIn, palletDIn, clearIn, stationIn, postIn, firstIn, spacingIn, heightIn,
     heightTyped: o.heightIn != null, laneWIn: palletWIn + 2 * clearIn,
     floorGuides: o.floorGuides ?? !!d.floorGuides, pitchInPerFt: o.pitchInPerFt ?? d.pitchInPerFt ?? null,
+    spacerIn, spacersPerJoint, frames: laneFrames(o?.type, deep),
   }
 }
 /** The footprint of spec `s` (inches). */
-export const laneSizeIn = (s) => ({ w: s.lanes * (s.palletWIn + 2 * s.clearIn) + (s.lanes + 1) * s.postIn, h: s.deep * s.stationIn })
+export const laneSizeIn = (s) => ({ w: s.lanes * (s.palletWIn + 2 * s.clearIn) + (s.lanes + 1) * s.postIn, h: s.deep * s.stationIn + laneJoints(s.type, s.deep) * (s.spacerIn || 0) })
 
 /** A new rack's fields (the library's placement): the type's defaults, its size. */
 export function laneNew(type, gridSize = 40) {
   const d = LANE_DEFAULTS[type]
-  const s = { lanes: d.lanes, deep: d.deep, palletWIn: d.palletWIn, palletDIn: d.palletDIn, clearIn: d.clearIn, stationIn: d.palletDIn + d.stationAddIn, postIn: d.postIn }
+  const s = { type, lanes: d.lanes, deep: d.deep, palletWIn: d.palletWIn, palletDIn: d.palletDIn, clearIn: d.clearIn, stationIn: d.palletDIn + d.stationAddIn, postIn: d.postIn, spacerIn: d.spacerIn }
   const { w, h } = laneSizeIn(s)
   return {
     lanes: d.lanes, palletDeep: d.deep, levels: d.levels, levelsOwn: true, palletWIn: d.palletWIn, palletDIn: d.palletDIn,
     clearIn: d.clearIn, stationIn: s.stationIn, uprightWidth: d.postIn, firstIn: d.newFirstIn ?? d.firstIn, spacingIn: d.spacingIn,
     ...(d.floorGuides ? { floorGuides: true } : {}), ...(d.pitchInPerFt ? { pitchInPerFt: d.pitchInPerFt } : {}),
+    ...(d.spacerIn != null ? { spacerIn: d.spacerIn, spacersPerJoint: d.spacersPerJoint } : {}),
     width: (w / 12) * gridSize, height: (h / 12) * gridSize,
   }
 }
 
 /** The object patch for an edit `p` — any of lanes, deep, levels, palletWIn, palletDIn, clearIn, postIn, firstIn,
- *  spacingIn, heightIn (null: back to first + levels × spacing), floorGuides, type — with the size worked out again and
+ *  spacingIn, heightIn (null: back to first + levels × spacing), floorGuides, type, spacerIn, spacersPerJoint (push-back) — with the size worked out again and
  *  the anchored corner (`anchor`, bayAnchor's: the start corner by default) held where it is drawn. A pallet depth
  *  changed: the depth station is the pallet depth + 4. Push-back: deep kept within 2 to 6. */
 export function laneChange(o, p = {}, gridSize = 40, anchor = {}) {
@@ -88,11 +116,13 @@ export function laneChange(o, p = {}, gridSize = 40, anchor = {}) {
   const stationIn = p.palletDIn != null ? palletDIn + d.stationAddIn : s.stationIn
   const clearIn = p.clearIn != null ? nonneg(p.clearIn, s.clearIn) : s.clearIn
   const postIn = p.postIn != null ? pos(p.postIn, s.postIn) : s.postIn
-  const { w, h } = laneSizeIn({ lanes, deep, palletWIn, clearIn, postIn, stationIn })
+  const spacerIn = p.spacerIn != null ? nonneg(p.spacerIn, s.spacerIn) : s.spacerIn
+  const { w, h } = laneSizeIn({ type, lanes, deep, palletWIn, clearIn, postIn, stationIn, spacerIn })
   // a size that has not changed is kept exactly as saved (no float drift on a rack saved before)
   const w0 = (w / 12) * gridSize, h0 = (h / 12) * gridSize
   const width = Math.abs(w0 - o.width) < 1e-6 ? o.width : w0, height = Math.abs(h0 - o.height) < 1e-6 ? o.height : h0
   const out = { lanes, palletDeep: deep, palletWIn, palletDIn, clearIn, stationIn, uprightWidth: postIn, width, height }
+  if (type === 'rack_pushback') { out.spacerIn = spacerIn; out.spacersPerJoint = p.spacersPerJoint != null ? int(p.spacersPerJoint, s.spacersPerJoint) : s.spacersPerJoint }   // (pushback-frames)
   if (p.type && p.type !== o.type) out.type = p.type
   if (p.levels != null) { out.levels = int(p.levels, s.levels); out.levelsOwn = true }
   if (p.firstIn != null) out.firstIn = nonneg(p.firstIn, s.firstIn)

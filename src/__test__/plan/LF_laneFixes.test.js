@@ -53,7 +53,7 @@ describe('(lane-fixes 1, 2, 3) push-back beams, anchors and the first level', ()
       const o = mk('rack_pushback', { palletDeep: D, height: px(D * 52) }), F = pushbackFrameLines(D)
       const parts = Object.fromEntries(laneParts(o, 3, GS).map(p => [p.part, p.qty]))
       expect([D, parts.Beam]).toEqual([D, 3 * 3 * F])
-      expect([D, parts.Anchor]).toEqual([D, 2 * 4 * F])   // 2 per post, a post at each of the 4 post lines on each frame line
+      expect([D, parts.Anchor]).toEqual([D, 2 * 4 * 2 * (F - 1)])   // (pushback-frames) 2 per post, 2 posts on each of the N = F − 1 frames on each of the 4 post lines
     }
     expect(ANCHORS_PER_POST).toBe(2)
   })
@@ -87,7 +87,7 @@ describe('(lane-fixes 4) the xlsx: the push-back section as the BOM tab and the 
     expect(rows[at + 1]).toEqual(['Part', 'Size', 'P1', 'P2', 'Total'])
     const t = laneTable(b.types[0])
     expect(rows.slice(at + 2, at + 2 + t.parts.length).map(r => r[r.length - 1])).toEqual(t.parts.map(p => String(p.total)))
-    expect(rows.slice(at + 2).map(r => r[0])).toEqual(['Frame', 'Beam', 'Rail set', 'Cart', 'Entry guide', 'Anchor'])
+    expect(rows.slice(at + 2).map(r => r[0])).toEqual(['Frame', 'Row spacer', 'Beam', 'Rail set', 'Cart', 'Entry guide', 'Anchor'])   // (pushback-frames) + row spacers
   })
   it('the beam racks\' table is exactly as it was (no lane section: the same rows, widths and bold rows)', () => {
     for (const name of ['older-horizontal', 'crowded-vertical', 'walls-racks']) {

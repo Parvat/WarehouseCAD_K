@@ -11443,7 +11443,7 @@ describe('REG — the hand check by real clicks', () => {
       const p1 = await lnObj('lane-1')
       await lnView(p1)
       const placed = await lnPlace('Push-back', { x: p1.x + p1.width / 2, y: p1.y + p1.height + 500 })
-      expect(placed && [placed.type, placed.lanes, placed.palletDeep, placed.levels, placed.firstIn, Math.round(placed.width / 40 * 12), Math.round(placed.height / 40 * 12)]).toEqual(['rack_pushback', 3, 4, 3, 8, 150, 208])   // (lane-fixes 3) first beam 8 in (was 0)
+      expect(placed && [placed.type, placed.lanes, placed.palletDeep, placed.levels, placed.firstIn, Math.round(placed.width / 40 * 12), Math.round(placed.height / 40 * 12)]).toEqual(['rack_pushback', 3, 4, 3, 8, 150, 4 * 52 + 6])   // (lane-fixes 3) first beam 8 in (was 0); (pushback-frames) 2 frames + a 6 in row spacer (was 208)
       expect(await L.S('return S.getState().activeTool')).toBe('select')
       await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
       await lnView(p1); await lnSelect(p1)
@@ -11549,13 +11549,13 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
       const st = (await L.page.locator('[data-bom-card="rack_pushback"]').innerText()).replace(/\s+/g, ' ')
       expect(st).toMatch(/Beam 46 in 54( |$)/)                     // 2 racks × 3 lanes × 3 levels × 3 frame lines (was 36)
-      expect(st).toMatch(/Anchor 48( |$)/)                         // 2 racks × 2 × 4 posts × 3 frame lines
+      expect(st).toMatch(/Anchor 64( |$)/)                         // (pushback-frames, PP option B) 2 racks × 2 per post × 4 post lines × 2 frames × 2 posts (lane-fixes: 48)
       // the Tally drawer: By row, then Summary
       await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
       const drawer = L.page.locator('[data-tally-drawer]')
       const lt = drawer.locator('[data-lane-table="rack_pushback"]')
       expect((await lt.innerText()).replace(/\s+/g, ' ')).toMatch(/^Push-back racking ?P1, P2 Part Size P1 P2 Total /)
-      expect(await lt.locator('[data-lane-part="Anchor"] [data-grand-total]').innerText()).toBe('48')
+      expect(await lt.locator('[data-lane-part="Anchor"] [data-grand-total]').innerText()).toBe('64')   // (pushback-frames) was 48
       await drawer.getByText('Summary', { exact: true }).click(); await L.page.waitForTimeout(300)
       expect(await drawer.locator('[data-lane-table="rack_pushback"]').count()).toBe(1)
       // the pop-out and its xlsx
@@ -11568,7 +11568,7 @@ describe('REG — the hand check by real clicks', () => {
       expect(at).toBeGreaterThan(2)
       expect(cells[at + 1].filter(v => v != null)).toEqual(['Part', 'Size', 'P1', 'P2', 'Total'])
       const anchor = cells.slice(at + 2).find(r => r && r[0] === 'Anchor')
-      expect(anchor.filter(v => v != null && v !== '').map(String)).toEqual(['Anchor', '24', '24', '48'])
+      expect(anchor.filter(v => v != null && v !== '').map(String)).toEqual(['Anchor', '32', '32', '64'])   // (pushback-frames) was 24 24 48
       await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
     }, 3 * T)
 
@@ -11584,6 +11584,46 @@ describe('REG — the hand check by real clicks', () => {
       expect(await lnCard().getByRole('combobox', { name: 'First beam (in)' }).inputValue()).toBe(String(saved ?? 0))
       expect((await lnObj('lane-1')).firstIn).toBe(saved)
     }, 2 * T)
+
+    onceIt('REG-pushback-frames (click): (pushback-frames, PP option B) a push-back placed from the library, 4 deep: 2 frames joined by row spacers — its card shows Row spacer length 6 and Spacers per joint 2, its depth is 4 stations + 6 in; typing 1 ft in Row spacer length makes it 6 in deeper (one undo back); Spacers per joint 3 changes only the BOM; the BOM tab lists the frames by depth and the spacers by length; 3 deep: 1 frame, no spacer; a saved push-back keeps its size', async () => {
+      await lnOpen('lane-push')
+      const p1 = await lnObj('lane-1'), in12 = (v) => Math.round((v / 40) * 12 * 100) / 100
+      await lnView(p1)
+      const placed = await lnPlace('Push-back', { x: p1.x + p1.width / 2, y: p1.y + p1.height + 500 })
+      expect([placed.type, placed.palletDeep, placed.spacerIn, placed.spacersPerJoint, in12(placed.height)]).toEqual(['rack_pushback', 4, 6, 2, 4 * 52 + 6])
+      await lnView(placed); await lnSelect(placed)
+      expect(await lnCard().getByRole('combobox', { name: 'Row spacer length (in)' }).inputValue()).toBe('6')
+      expect(await lnCard().getByRole('spinbutton', { name: 'Spacers per joint', exact: true }).inputValue()).toBe('2')
+      expect(await lnCard().locator('[data-pushback-frames]').innerText()).toBe('2 frames (2 deep + 2 deep) joined by 6 in row spacers')
+      // Row spacer length: typed in the units' form (1'), one undo
+      const h0 = await lnHist()
+      const sp = lnCard().getByRole('combobox', { name: 'Row spacer length (in)' })
+      await sp.click(); await sp.fill("1'"); await sp.press('Enter'); await L.page.waitForTimeout(300)
+      const a = await lnObj(placed.id)
+      expect([a.spacerIn, in12(a.height), Math.round(a.x), Math.round(a.y), (await lnHist()) - h0]).toEqual([12, 4 * 52 + 12, Math.round(placed.x), Math.round(placed.y), 1])
+      await lnBlurUndo()
+      expect([(await lnObj(placed.id)).spacerIn, in12((await lnObj(placed.id)).height)]).toEqual([6, 4 * 52 + 6])
+      // Spacers per joint: 3 — the size unchanged, one undo
+      await lnSelect(placed)
+      const h1 = await lnHist()
+      await lnType('Spacers per joint', 3)
+      const b = await lnObj(placed.id)
+      expect([b.spacersPerJoint, in12(b.height), (await lnHist()) - h1]).toEqual([3, 4 * 52 + 6, 1])
+      // the BOM tab: the frames by depth, the spacers by length (the new rack: 4 post lines × 1 joint × 3)
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      const qty = (part, size) => L.page.locator(`[data-bom-card="rack_pushback"] [data-part="${part}"][data-size="${size}"]`).getAttribute('data-qty')
+      expect(await qty('Upright frame', '15 ft 8 in × 8 ft 8 in')).toBe('8')   // the new rack's 4 × 2 short frames (8 in + 3 × 60 high)
+      expect(await qty('Row spacer', '6 in')).toBe('12')                       // 4 × 1 × 3
+      await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
+      // 3 deep: one frame, no joint — the depth is 3 stations
+      await lnSelect(b)
+      await lnType('Deep (pallets)', 3)
+      const c = await lnObj(placed.id)
+      expect([c.palletDeep, in12(c.height)]).toEqual([3, 3 * 52])
+      expect(await lnCard().locator('[data-pushback-frames]').innerText()).toBe('1 frame, no row spacer')
+      // the saved push-backs: their size exactly as saved
+      for (const id of ['lane-1', 'lane-2']) { const o = await lnObj(id); expect(in12(o.height)).toBe(4 * 52) }
+    }, 3 * T)
 
     onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit (inside the run, both pick faces open), then a click on the run: 2 of 3, one red X', async () => {
       const B = await import('./handCheck/browser.js')
