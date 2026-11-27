@@ -88,7 +88,7 @@ Generate places no push-back, so its results don't change.
 - `PF_pushbackFrames`: the 1-frame 3-deep and the 5-deep cases are now set at max 3; the spacer-edit depths follow max 2.
 - `LF_laneFixes`: the beam-lines check reads the rack's own max per frame.
 
-**Full suite:** see the end of this report.
+**Full suite:** 4,707 / 4,707 passed (122 files), first run.
 
 ## Questions for PP
 
