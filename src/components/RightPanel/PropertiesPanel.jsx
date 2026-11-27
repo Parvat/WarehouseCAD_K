@@ -19,6 +19,7 @@ import { shelvingUnits } from '../../render/rackOps'
 import { useColumnCheck } from '../../generate/useColumnCheck'   // (lane-fixes 5)
 import { LaneCard } from '../../studio/LaneCard'   // (r3-drive-in)
 import { laneEngineOn } from '../../racks/laneEngine'
+import { CantileverCard } from '../../studio/CantileverCard'   // (r6-cantilever)
 import { nanoid as newIdForZone } from 'nanoid'
 
 /** (dealer audit; d1-final, the mockups' cards) A drawn shape's style after drawing — the Draw bar's own controls:
@@ -512,6 +513,17 @@ export function PropertiesPanel() {
   if (laneEngineOn(obj)) return (
     <>
       <LockedFields locked={locked}><LaneCard obj={obj} /></LockedFields>
+      <More locked={locked}>
+        <ObjectActions obj={obj} />
+        <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>
+      </More>
+    </>
+  )
+
+  /* (r6-cantilever) a cantilever: its card (studio/CantileverCard.jsx), then More */
+  if (obj.type === 'rack_cantilever') return (
+    <>
+      <LockedFields locked={locked}><CantileverCard obj={obj} /></LockedFields>
       <More locked={locked}>
         <ObjectActions obj={obj} />
         <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>

@@ -34,7 +34,7 @@ export function laneHeadline(o, { tag = '', levels, pal }) {
 }
 
 /** An inches field in the project's units, with its standard sizes as a list (Custom: type any). */
-function Inches({ value, aria, options, onCommit }) {
+export function Inches({ value, aria, options, onCommit }) {   // (r6-cantilever) shared by the cantilever, carton-flow and mezzanine cards
   const u = useUnits()
   return (
     <SizeInput inches={value} aria={aria} options={options} custom={!!options}

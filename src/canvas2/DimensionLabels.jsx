@@ -24,6 +24,7 @@ import { isEmptySide } from '../utils/bayEmpty'
 import { useFlued } from './dragPreview'   // (gen-lock)
 import { faceWordsReach } from '../render/rackOps'   // (rack-design)
 import { shelvingLabel, shelvingTag } from '../utils/shelving'   // (rack-round3 6)
+import { cantSpec } from '../racks/cantilever'   // (r6-cantilever)
 import { laneEngineOn } from '../racks/laneEngine'   // (r3-drive-in)
 
 /* ── Dimension labels — ported from the SVG engine, render-only ──────────────
@@ -189,8 +190,10 @@ export function RackLabels({ obj: stored, zoom, gridSize }) {
     const armTxt = `${armIn}" arm`, armTw = armTxt.length * fs * 0.62 + (4 / zoom) * 2
     const ax = bx + bw + 6 / zoom + armTw / 2
     endPill('arm', ax, by + bh / 2, armTxt, mirror(ax, bx + bw / 2))
-    const spTxt = '48" spacing', spTw = spTxt.length * fs * 0.62 + (4 / zoom) * 2
-    const tSpPx = (48 / 12) * gridSize
+    // (r6-cantilever) its own column spacing (a saved one: its width over its bays — 48 in on every one saved so far)
+    const spIn = Math.round(cantSpec(obj, gridSize).spacingIn * 100) / 100
+    const spTxt = `${spIn}" spacing`, spTw = spTxt.length * fs * 0.62 + (4 / zoom) * 2
+    const tSpPx = (spIn / 12) * gridSize
     if (tSpPx > spTw && bw > tSpPx) {
       nodes.push(<LabelPill key="spacing" cx={bx + tSpPx / 2} cy={by - 14 / zoom} text={spTxt} fontSize={fs} zoom={zoom} color={clr} />)
     }

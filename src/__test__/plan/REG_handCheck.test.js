@@ -11669,6 +11669,65 @@ describe('REG — the hand check by real clicks', () => {
       for (const id of ['lane-1', 'lane-2']) { const o = await lnObj(id); expect([o.maxPerFrame, in12(o.height)]).toEqual([undefined, 4 * 52]) }
     }, 3 * T)
 
+    onceIt('REG-r6-cantilever (click): (r6-cantilever) a cantilever placed from the library has the defaults (single-sided, 4 columns at 8 ft, 4 ft arms, 3 levels) and its card reads "C3 · 4 columns · 3 bays · 3 levels · single-sided" with 9 load spots; Double doubles the reach (one undo, the depth 2 arms + the column line); Columns typed and the end handle dragged a bay each add whole columns (one undo each); Arm length typed in feet (5 ft) makes the base 5 ft 6 in; Arm type Inclined; the layout pallet positions never change; the BOM tab has a Cantilever racking section (Column, Arm, Base, Brace, Anchor); save and reload keep every field; a saved cantilever is unchanged', async () => {
+      await lnOpen('cantilever')
+      const c1 = await lnObj('cant-1'), in12 = (v) => Math.round((v / 40) * 12 * 100) / 100
+      const pal = () => L.S('return import("/src/utils/capacity.js").then(M => M.getLayoutCapacity(S.getState().objects).total)')
+      const pal0 = await pal()
+      await lnView(c1)
+      const placed = await lnPlace('Cantilever', { x: c1.x + c1.width / 2, y: c1.y + c1.height + 400 })
+      expect([placed.type, placed.towers, placed.doubleSided, placed.armLevels, in12(placed.width), in12(placed.height), await L.S('return S.getState().activeTool')]).toEqual(['rack_cantilever', [48, 48, 48, 48], false, 3, 3 * 96, 52, 'select'])
+      await lnView(placed); await lnSelect(placed)
+      expect(await lnText()).toMatch(/C3 · 4 columns · 3 bays · 3 levels · single-sided/)
+      expect(await lnCard().locator('[data-cant-spots]').getAttribute('data-cant-spots')).toBe('9')
+      // Double: one undo, the reach both ways
+      let h = await lnHist()
+      await lnCard().getByRole('group', { name: 'Sides' }).getByRole('button', { name: 'Double', exact: true }).click(); await L.page.waitForTimeout(300)
+      let o = await lnObj(placed.id)
+      expect([o.doubleSided, in12(o.height), Math.round(o.x), Math.round(o.y), (await lnHist()) - h]).toEqual([true, 2 * 48 + 4, Math.round(placed.x), Math.round(placed.y), 1])
+      expect(await lnCard().locator('[data-cant-spots]').getAttribute('data-cant-spots')).toBe('18')
+      // Columns typed: 6 — one undo
+      h = await lnHist(); await lnType('Columns', 6)
+      o = await lnObj(placed.id)
+      expect([o.towers.length, in12(o.width), (await lnHist()) - h]).toEqual([6, 5 * 96, 1])
+      // the end handle dragged out one bay: 7 columns, one undo; back: Ctrl+Z
+      await L.page.keyboard.press('Escape'); await lnSelect(o)
+      h = await lnHist(); await lnHandle(placed.id, 'mr', (96 / 12) * 40 * 1.1, 0)
+      o = await lnObj(placed.id)
+      expect([o.towers.length, in12(o.width), Math.round(o.x), (await lnHist()) - h]).toEqual([7, 6 * 96, Math.round(placed.x), 1])
+      await lnBlurUndo()
+      expect((await lnObj(placed.id)).towers.length).toBe(6)
+      // Arm length in feet: 5' → 60 in, the base 66 in (arm + 6)
+      await lnSelect(await lnObj(placed.id))
+      const arm = lnCard().getByRole('combobox', { name: 'Arm length (in)' })
+      await arm.click(); await arm.fill("5'"); await arm.press('Enter'); await L.page.waitForTimeout(300)
+      o = await lnObj(placed.id)
+      expect([o.towers[0], in12(o.height)]).toEqual([60, 2 * 60 + 4])
+      expect(await lnCard().getByRole('combobox', { name: 'Base length (in)' }).inputValue()).toBe('66')
+      // Arm type Inclined
+      await lnCard().getByRole('group', { name: 'Arm type' }).getByRole('button', { name: 'Inclined', exact: true }).click(); await L.page.waitForTimeout(300)
+      expect((await lnObj(placed.id)).armType).toBe('inclined')
+      // loads, not pallets
+      expect(await pal()).toBe(pal0)
+      // the BOM tab: its own section
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      const q = (part, size) => L.page.locator(`[data-bom-card="rack_cantilever"] [data-part="${part}"][data-size="${size}"]`).getAttribute('data-qty')
+      expect(await q('Arm', '5 ft · Inclined')).toBe(String(6 * 3 * 2))
+      expect(await q('Brace', '8 ft')).toBe(String(3 + 4 + 5))   // cant-1, cant-2 and the new one, all at 8 ft
+      await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
+      // save and reload
+      const saved = await L.S('return SL.serializeScene(S.getState())')
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
+      const r = await lnObj(placed.id)
+      expect([r.towers, r.doubleSided, r.armType, r.armLevels, r.spacingIn]).toEqual([[60, 60, 60, 60, 60, 60], true, 'inclined', 3, 96])
+      // a saved cantilever (walls-racks): its size as saved
+      L = await B.openLayout(app, B.fixture('walls-racks'))
+      const w = await lnObj('w-east')
+      expect([w.width, w.height, w.towers]).toEqual([480, 253.33333333333331, [36, 36, 36, 36]])
+      await lnView(w); await lnSelect(w)
+      expect(await lnText()).toMatch(/4 columns · 3 bays · 3 levels · double-sided/)
+    }, 3 * T)
+
     onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit (inside the run, both pick faces open), then a click on the run: 2 of 3, one red X', async () => {
       const B = await import('./handCheck/browser.js')
       L = await B.openLayout(app, B.fixture('older-horizontal'))

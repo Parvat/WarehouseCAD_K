@@ -1,5 +1,6 @@
 import { BEAM_TYPES } from '../../utils/rackTypes'
 import { LANE_ENGINE_ON, laneNew } from '../../racks/laneEngine'   // (r3-drive-in)
+import { cantNew } from '../../racks/cantilever'   // (r6-cantilever)
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { placeFloat, floatAvoidRects, floatFreeHeight } from '../../utils/floatPlace'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL } from '../../canvas2/sectionTool'
@@ -1021,6 +1022,8 @@ export function FloatingToolbar({ studio = false } = {}) {
       // (r3-drive-in) a lane rack the engine runs: its defaults (lanes, deep, levels, pallet, clearance, station, post) and
       // size — last, over the older lane fields above
       ...(LANE_ENGINE_ON.has(item.type)?laneNew(item.type, GS):{}),
+      // (r6-cantilever) a cantilever: its defaults (single-sided, 4 columns at 8 ft, 4 ft arms, 3 levels …) and size
+      ...(item.type==='rack_cantilever'?cantNew(GS):{}),
       layerId:layerForType(item.type),   // its layer by type (utils/layers.js)
       /* column_grid is parented like everything else: the columns are the
          building's own structure, so they travel with it and go with it when

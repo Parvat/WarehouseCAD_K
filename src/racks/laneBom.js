@@ -28,6 +28,7 @@
 //     Pallet stop       L × V                  at the PICK end
 //     Entry guide       2 × L × V              at the LOAD end
 import { laneSpec, laneFrames, LANE_NAMES } from './laneEngine'
+import { cantParts } from './cantilever'   // (r6-cantilever)
 import { rackNumbersNow } from '../utils/rackLines'
 import { lineNamer } from '../utils/lineNames'
 import { laneLevels } from '../utils/capacity'
@@ -39,7 +40,9 @@ import { levelsResolver } from '../utils/elevations'
 export const LANE_BOMS_PENDING_ON = false
 export const LANE_BOM_PENDING = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pallet_flow'])
 /** The lane types whose BOM section is on. */
-export const laneBomTypes = (pendingOn = LANE_BOMS_PENDING_ON) => new Set(['rack_pushback', ...(pendingOn ? LANE_BOM_PENDING : [])])
+export const laneBomTypes = (pendingOn = LANE_BOMS_PENDING_ON) => new Set(['rack_pushback', 'rack_cantilever', ...(pendingOn ? LANE_BOM_PENDING : [])])   // (r6-cantilever) + cantilever (its own section: racks/cantilever.js)
+/** Each section's name. */
+const SECTION_NAMES = { ...LANE_NAMES, rack_cantilever: 'Cantilever' }
 /** Push-back: anchors per post (PP); its beam lines — front, each joint, rear: N + 1 (2 up to 3 deep, 3 from 4 deep). */
 export const ANCHORS_PER_POST = 2
 export const pushbackFrameLines = (D, perFrame) => laneFrames('rack_pushback', D, perFrame).length + 1
@@ -66,6 +69,7 @@ export function pushbackParts(s, V) {
 
 /** One rack's parts: [{ part, size, qty }] (the formulas above). `levels`: its levels as counted (capacity's). */
 export function laneParts(o, levels, gridSize = 40) {
+  if (o.type === 'rack_cantilever') return cantParts(o, gridSize)   // (r6-cantilever) its levels are its own arm levels
   const s = laneSpec(o, gridSize), L = s.lanes, D = s.deep, V = Math.max(1, levels), P = L + 1
   const run = D * s.stationIn, lane = inch(s.laneWIn), h = ftIn(s.heightIn)
   if (o.type === 'rack_drive_in' || o.type === 'rack_drive_through') {
@@ -104,7 +108,7 @@ export function laneBom(objects, T, { gridSize = 40, types } = {}) {
   for (const l of nums) if (l.other) tagOf.set(l.ids[0], (name && name(l.no)) || l.tag)
   const levelsAt = levelsResolver(T)
   const out = []
-  for (const type of ['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow']) {
+  for (const type of ['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow', 'rack_cantilever']) {
     if (!types.has(type)) continue
     const racks = list.filter(o => o.type === type).map(o => ({ o, tag: tagOf.get(o.id) || '' }))
       .sort((a, b) => (a.tag.length - b.tag.length) || a.tag.localeCompare(b.tag))
@@ -118,7 +122,7 @@ export function laneBom(objects, T, { gridSize = 40, types } = {}) {
       const l = m.get(key)
       l.qty += p.qty; if (!l.ids.includes(o.id)) l.ids.push(o.id); l.rows[tag] = (l.rows[tag] || 0) + p.qty
     }
-    out.push({ id: type, name: LANE_NAMES[type] + ' racking', rows: racks.map(r => ({ tag: r.tag, id: r.o.id })), lines: [...m.values()].sort((a, b) => (partAt.get(a.part) - partAt.get(b.part)) || (a.at - b.at)).map(({ at, ...l }) => l) })   // (pushback-frames) a part's sizes together (frames by depth), in the order the parts first come
+    out.push({ id: type, name: SECTION_NAMES[type] + ' racking', rows: racks.map(r => ({ tag: r.tag, id: r.o.id })), lines: [...m.values()].sort((a, b) => (partAt.get(a.part) - partAt.get(b.part)) || (a.at - b.at)).map(({ at, ...l }) => l) })   // (pushback-frames) a part's sizes together (frames by depth), in the order the parts first come
   }
   return out
 }
