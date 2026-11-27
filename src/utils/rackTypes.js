@@ -10,6 +10,7 @@
 //   arm       cantilever (towers and arms, not pallet positions)
 //   shelf     hand-picked shelving
 //   platform  mezzanine
+//   carton    carton flow (r8-carton-flow: carton lanes, not pallet positions)
 //
 // Names (kept exactly as the app showed them before the registry — R1 changes no text):
 //   card      the Properties card caption (studio/cards.jsx, RightPanel/PropertiesPanel.jsx)
@@ -25,6 +26,7 @@ export const RACK_TYPES = {
   rack_pushback:      { family: 'lane',     flow: 'LIFO', card: 'Pushback',      check: 'Pushback rack',      generate: 'Push-Back Rack' },
   rack_pallet_flow:   { family: 'lane',     flow: 'FIFO', card: 'Pallet flow',   check: 'Pallet flow rack',   generate: 'Pallet-Flow Rack' },
   rack_cantilever:    { family: 'arm',      card: 'Cantilever',    check: 'Cantilever rack' },
+  rack_carton_flow:   { family: 'carton',   flow: 'FIFO', card: 'Carton flow', check: 'Carton flow rack' },   // (r8-carton-flow)
   // (no card name yet: the card shows their bare type, and the nothing-selected rack count leaves them out — as before)
   rack_mezzanine:     { family: 'platform', check: 'Mezzanine' },
   rack_shelving:      { family: 'shelf',    check: 'Shelving unit' },

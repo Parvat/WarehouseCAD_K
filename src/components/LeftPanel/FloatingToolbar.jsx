@@ -2,6 +2,7 @@ import { BEAM_TYPES } from '../../utils/rackTypes'
 import { LANE_ENGINE_ON, laneNew } from '../../racks/laneEngine'   // (r3-drive-in)
 import { cantNew } from '../../racks/cantilever'   // (r6-cantilever)
 import { shelfNew } from '../../racks/shelving'   // (r7-shelving)
+import { cartonNew } from '../../racks/cartonFlow'   // (r8-carton-flow)
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react'
 import { placeFloat, floatAvoidRects, floatFreeHeight } from '../../utils/floatPlace'
 import { SECTION_RECT_TOOL, SECTION_PEN_TOOL } from '../../canvas2/sectionTool'
@@ -1027,6 +1028,8 @@ export function FloatingToolbar({ studio = false } = {}) {
       ...(item.type==='rack_cantilever'?cantNew(GS):{}),
       // (r7-shelving) a shelving run: 4 units of 48 × 24, 5 shelves, 7 ft
       ...(item.type==='rack_shelving'?shelfNew(GS):{}),
+      // (r8-carton-flow) a carton flow: 3 bays of 8 ft, 8 ft deep, 4 levels, 6 lanes a level
+      ...(item.type==='rack_carton_flow'?cartonNew(GS):{}),
       layerId:layerForType(item.type),   // its layer by type (utils/layers.js)
       /* column_grid is parented like everything else: the columns are the
          building's own structure, so they travel with it and go with it when

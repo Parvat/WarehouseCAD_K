@@ -22,7 +22,7 @@ export const RACK_FAMILIES = {
 const FAMILY_OF_TYPE = {
   rack_row: 'pallet', rack_double_row: 'pallet',
   rack_drive_in: 'lane', rack_drive_through: 'lane',
-  rack_pushback: 'flow', rack_pallet_flow: 'flow',
+  rack_pushback: 'flow', rack_pallet_flow: 'flow', rack_carton_flow: 'flow',   // (r8-carton-flow) amber, as pallet flow
   rack_cantilever: 'other', rack_shelving: 'other',
   rack_mezzanine: 'mezz',
 }

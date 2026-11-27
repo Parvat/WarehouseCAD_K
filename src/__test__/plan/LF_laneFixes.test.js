@@ -22,7 +22,7 @@ const mk = (type, over = {}) => ({ id: 'r', type, x: 1000, y: 1000, rotation: 0,
 describe('(lane-fixes 0) drive-in, drive-through and pallet-flow BOMs off until the dealer details are in', () => {
   it('the one setting is OFF, and holds exactly those three types', () => {
     expect(LANE_BOMS_PENDING_ON).toBe(false)
-    expect([...LANE_BOM_PENDING].sort()).toEqual(['rack_drive_in', 'rack_drive_through', 'rack_pallet_flow'])
+    expect([...LANE_BOM_PENDING].sort()).toEqual(['rack_carton_flow', 'rack_drive_in', 'rack_drive_through', 'rack_pallet_flow'])   // (r8-carton-flow) + carton flow, off with them
     expect([...laneBomTypes()]).toEqual(['rack_pushback', 'rack_cantilever', 'rack_shelving'])   // (r6-cantilever) + cantilever's own section; (r7-shelving) + shelving's
   })
   it('no section in the BOM, the CSV or the xlsx; listed under "not in this BOM" as before the holiday run', () => {

@@ -25,8 +25,8 @@ export const RACK_LIBRARY = [
   ['Flow', [
     { id: 'rack_pushback', name: 'Push-back', tip: 'Carts, load and pick one face', icon: 'pushback' },
     { id: 'rack_pallet_flow', name: 'Pallet flow', tip: 'Load back, pick front, gravity', icon: 'flow' },
-    // not built yet (FEATURES.md: carton flow) — a disabled row, "Coming soon"; no library item, nothing to place
-    { id: 'rack_carton_flow', name: 'Carton flow', tip: 'Coming soon', icon: 'flow' },
+    // (r8-carton-flow) built: was a disabled "Coming soon" row
+    { id: 'rack_carton_flow', name: 'Carton flow', tip: 'Carton lanes, load back, pick front', icon: 'carton' },
   ]],
   ['Other', [
     { id: 'rack_cantilever', name: 'Cantilever', tip: 'Arms for long loads', icon: 'cantilever' },
@@ -52,6 +52,8 @@ export function RackGlyph({ icon, color }) {
     drivethrough: <><rect x="1.75" y="2.75" width="16.5" height="10" {...s} /><path d="M7.25 2.75v10M12.75 2.75v10" {...s} />{bar(1)}{bar(13)}</>,
     pushback: <><rect x="1.75" y="1.75" width="16.5" height="11" {...s} /><path d="M10 10.5V5M7.5 7.25 10 4.75l2.5 2.5" {...s} />{bar(13)}</>,
     flow: <><rect x="1.75" y="2.75" width="16.5" height="10" {...s} /><path d="M10 5v5.5M7.5 8.25 10 10.75l2.5-2.5" {...s} />{bar(1)}{bar(13)}</>,
+    // (r8-carton-flow) as Pallet flow's: the face bars and the arrow, with lane lines
+    carton: <><rect x="1.75" y="2.75" width="16.5" height="10" {...s} /><path d="M5.75 2.75v10M14.25 2.75v10" {...s} strokeWidth="0.75" /><path d="M10 5v5.5M7.5 8.25 10 10.75l2.5-2.5" {...s} />{bar(1)}{bar(13)}</>,
     cantilever: <><path d="M1 3.25h18" {...s} strokeWidth="2.5" /><path d="M2.5 3v10M10 3v10M17.5 3v10" {...s} /></>,
     shelving: <><rect x="1.75" y="5.25" width="16.5" height="5.5" {...s} /><path d="M7.25 5.25v5.5M12.75 5.25v5.5" {...s} /></>,
     mezzanine: <><rect x="1.75" y="1.75" width="16.5" height="12.5" {...s} strokeDasharray="2.5 1.5" /><path d="M1.75 1.75l16.5 12.5M18.25 1.75L1.75 14.25" {...s} strokeWidth="1" /></>,

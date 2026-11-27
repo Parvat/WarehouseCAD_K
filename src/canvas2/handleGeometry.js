@@ -37,7 +37,7 @@ export const HANDLE_ACCENT = SELECT_BLUE
      - beam racks (bays/towers only stretch along their length) -> ml/mr only
      - lane racks (drive-in/through, pushback, pallet-flow) -> suppress tc
      - aisle -> nothing at all */
-const ML_MR_ONLY = new Set(['rack_row', 'rack_double_row', 'rack_cantilever'])
+const ML_MR_ONLY = new Set(['rack_row', 'rack_double_row', 'rack_cantilever', 'rack_carton_flow'])   // (r8-carton-flow) its end sides: whole bays
 const SUPPRESS_TC = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow'])
 
 /* A racking area resizes by its four edges only (generate/rackingArea.js); a

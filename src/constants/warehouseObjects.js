@@ -260,6 +260,29 @@ export const WAREHOUSE_CATEGORIES = [
           ]
         },
       },
+      // (r8-carton-flow) carton flow — bays of sloped carton lanes, LOAD at the back, PICK at the front (racks/cartonFlow.js)
+      {
+        id: 'rack_carton_flow',
+        type: 'rack_carton_flow',
+        label: 'Carton Flow Rack',
+        description: 'Gravity-fed carton lanes — loads back, picks front',
+        color: '#22c55e',
+        snapType: SNAP_TYPES.FREE,
+        w: 24, h: 8,
+        variants: [
+          { label: '3 bays × 8 ft', w: 24, h: 8 },
+        ],
+        meta: { bays: 3, bayWidthIn: 96, depthIn: 96 },
+        getSnapPoints: (obj) => {
+          const { x, y, width: w, height: h } = obj
+          return [
+            { id: 'left',   x: x,     y: y+h/2, role: 'end',   axis: 'x' },
+            { id: 'right',  x: x+w,   y: y+h/2, role: 'end',   axis: 'x' },
+            { id: 'load',   x: x+w/2, y: y,     role: 'back'  },
+            { id: 'pick',   x: x+w/2, y: y+h,   role: 'front' },
+          ]
+        },
+      },
       {
         id: 'rack_mezzanine',
         type: 'rack_mezzanine',

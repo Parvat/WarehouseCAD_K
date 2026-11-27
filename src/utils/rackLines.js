@@ -126,7 +126,7 @@ export const rackLinesNow = (objects, gridSize = 40) => numberLines(objects, gri
    mezzanine is a platform: no number. Nothing is stored — renumbered on every add, delete, duplicate and undo, as the
    beam lines are. They have no BOM line yet (the BOM reads numberLines only). */
 /** (rack-round2 3) Each type's letter — its own sequence (D1, D2 …; C1 …), no gaps. The beam racks stay R. */
-export const RACK_LETTERS = { rack_drive_in: 'D', rack_drive_through: 'T', rack_pushback: 'P', rack_pallet_flow: 'F', rack_cantilever: 'C', rack_shelving: 'S', rack_mezzanine: 'M' }
+export const RACK_LETTERS = { rack_drive_in: 'D', rack_drive_through: 'T', rack_pushback: 'P', rack_pallet_flow: 'F', rack_carton_flow: 'K', rack_cantilever: 'C', rack_shelving: 'S', rack_mezzanine: 'M' }
 const isOtherRack = (o) => !!o && typeof o.type === 'string' && o.type.startsWith('rack_') && !BEAM.has(o.type) && o.width > 0 && o.height > 0
 const otherCache = new WeakMap()
 /** The racks that are not beam racks, as lines in numbering order (before the numbers): [{ key, ids: [id], ws: 'one',

@@ -23,10 +23,10 @@ const norm = (r) => ((((r || 0) % 360) + 360) % 360)
 
 /** Each type's faces, in its own (unrotated) frame: 'top' | 'bottom'. A shelving unit's is decided by what backs it. */
 const FACES = {
-  rack_drive_in: ['bottom'], rack_drive_through: ['top', 'bottom'], rack_pushback: ['bottom'], rack_pallet_flow: ['top', 'bottom'],
+  rack_drive_in: ['bottom'], rack_drive_through: ['top', 'bottom'], rack_pushback: ['bottom'], rack_pallet_flow: ['top', 'bottom'], rack_carton_flow: ['top', 'bottom'],
 }
 export const facesOf = (r) => FACES[r.type] || (r.type === 'rack_cantilever' ? ((r.doubleSided ?? true) ? ['top', 'bottom'] : ['bottom']) : [])
-export const FACE_WORD = { rack_drive_in: { bottom: 'ENTRY' }, rack_drive_through: { top: 'ENTRY', bottom: 'ENTRY' }, rack_pushback: { bottom: 'LOAD · PICK' }, rack_pallet_flow: { top: 'LOAD', bottom: 'PICK' } }
+export const FACE_WORD = { rack_drive_in: { bottom: 'ENTRY' }, rack_drive_through: { top: 'ENTRY', bottom: 'ENTRY' }, rack_pushback: { bottom: 'LOAD · PICK' }, rack_pallet_flow: { top: 'LOAD', bottom: 'PICK' }, rack_carton_flow: { top: 'LOAD', bottom: 'PICK' } }
 
 /** The world normal of local side `side` of a rack turned `rot` (0 / 90 / 180 / 270, clockwise): [nx, ny]. */
 function normalOf(side, rot) {
@@ -42,7 +42,7 @@ function faceLine(f, [nx, ny]) {
 
 /** How far the floor in front of face `fl` is clear (world px), up to `look`: the nearest wall, column, rack, zone or
  *  door clear space over its span. → { d, kind } */
-function clearInFront(fl, look, { boxes, poly }) {
+export function clearInFront(fl, look, { boxes, poly }) {   // (r9-mezzanine) exported: a pallet gate's face aisle
   let best = { d: look, kind: null }
   const lo = fl.dir > 0 ? fl.at : fl.at - look, hi = fl.dir > 0 ? fl.at + look : fl.at
   const a = fl.a + 1, c = fl.c - 1

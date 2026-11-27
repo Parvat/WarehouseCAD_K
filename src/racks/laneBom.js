@@ -30,6 +30,7 @@
 import { laneSpec, laneFrames, LANE_NAMES } from './laneEngine'
 import { cantParts } from './cantilever'   // (r6-cantilever)
 import { shelfParts } from './shelving'   // (r7-shelving)
+import { cartonParts } from './cartonFlow'   // (r8-carton-flow)
 import { rackNumbersNow } from '../utils/rackLines'
 import { lineNamer } from '../utils/lineNames'
 import { laneLevels } from '../utils/capacity'
@@ -39,11 +40,11 @@ import { levelsResolver } from '../utils/elevations'
  *  differs; part names, frame spacing, ties, guides and brakes are needed first (docs/EPICS.md). The formulas stay; while
  *  it is off those racks are listed under "not in this BOM", as before the holiday run. Push-back's section is always on. */
 export const LANE_BOMS_PENDING_ON = false
-export const LANE_BOM_PENDING = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pallet_flow'])
+export const LANE_BOM_PENDING = new Set(['rack_drive_in', 'rack_drive_through', 'rack_pallet_flow', 'rack_carton_flow'])   // (r8-carton-flow) + carton flow
 /** The lane types whose BOM section is on. */
 export const laneBomTypes = (pendingOn = LANE_BOMS_PENDING_ON) => new Set(['rack_pushback', 'rack_cantilever', 'rack_shelving', ...(pendingOn ? LANE_BOM_PENDING : [])])   // (r6-cantilever) + cantilever (its own section: racks/cantilever.js)
 /** Each section's name. */
-const SECTION_NAMES = { ...LANE_NAMES, rack_cantilever: 'Cantilever', rack_shelving: 'Shelving' }
+const SECTION_NAMES = { ...LANE_NAMES, rack_cantilever: 'Cantilever', rack_shelving: 'Shelving', rack_carton_flow: 'Carton flow' }
 /** Push-back: anchors per post (PP); its beam lines — front, each joint, rear: N + 1 (2 up to 3 deep, 3 from 4 deep). */
 export const ANCHORS_PER_POST = 2
 export const pushbackFrameLines = (D, perFrame) => laneFrames('rack_pushback', D, perFrame).length + 1
@@ -72,6 +73,7 @@ export function pushbackParts(s, V) {
 export function laneParts(o, levels, gridSize = 40) {
   if (o.type === 'rack_cantilever') return cantParts(o, gridSize)   // (r6-cantilever) its levels are its own arm levels
   if (o.type === 'rack_shelving') return shelfParts(o, gridSize)   // (r7-shelving) its shelves
+  if (o.type === 'rack_carton_flow') return cartonParts(o, gridSize)   // (r8-carton-flow) off: behind LANE_BOMS_PENDING_ON
   const s = laneSpec(o, gridSize), L = s.lanes, D = s.deep, V = Math.max(1, levels), P = L + 1
   const run = D * s.stationIn, lane = inch(s.laneWIn), h = ftIn(s.heightIn)
   if (o.type === 'rack_drive_in' || o.type === 'rack_drive_through') {
@@ -110,7 +112,7 @@ export function laneBom(objects, T, { gridSize = 40, types } = {}) {
   for (const l of nums) if (l.other) tagOf.set(l.ids[0], (name && name(l.no)) || l.tag)
   const levelsAt = levelsResolver(T)
   const out = []
-  for (const type of ['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow', 'rack_cantilever', 'rack_shelving']) {
+  for (const type of ['rack_drive_in', 'rack_drive_through', 'rack_pushback', 'rack_pallet_flow', 'rack_carton_flow', 'rack_cantilever', 'rack_shelving']) {
     if (!types.has(type)) continue
     const racks = list.filter(o => o.type === type).map(o => ({ o, tag: tagOf.get(o.id) || '' }))
       .sort((a, b) => (a.tag.length - b.tag.length) || a.tag.localeCompare(b.tag))

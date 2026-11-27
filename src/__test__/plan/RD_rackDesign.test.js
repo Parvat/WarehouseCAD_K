@@ -15,7 +15,7 @@ describe('RD — the family colours', () => {
   it('RD-family: every rack type maps to its family and the family to the colours asked for', () => {
     expect(Object.fromEntries([...PORTED_RACK_TYPES].sort().map(t => [t, rackFamilyOf(t)]))).toEqual({
       rack_cantilever: 'other', rack_double_row: 'pallet', rack_drive_in: 'lane', rack_drive_through: 'lane',
-      rack_mezzanine: 'mezz', rack_pallet_flow: 'flow', rack_pushback: 'flow', rack_row: 'pallet', rack_shelving: 'other',
+      rack_mezzanine: 'mezz', rack_pallet_flow: 'flow', rack_carton_flow: 'flow', rack_pushback: 'flow', rack_row: 'pallet', rack_shelving: 'other',
     })
     expect(RACK_FAMILIES).toEqual({
       pallet: { line: '#2B3A67', tint: '#8C95B5', icon: '#8FA0D8' },
@@ -79,12 +79,13 @@ describe('RD — the racking library', () => {
       Selective: 'Single row, every pallet reachable', 'Back-to-back': 'Two rows sharing a flue', 'Double-deep': 'Two pallets deep, reach truck',
       'Drive-in': 'One entry, last in first out', 'Drive-through': 'Entry both ends, first in first out',
       'Push-back': 'Carts, load and pick one face', 'Pallet flow': 'Load back, pick front, gravity',
-      'Carton flow': 'Coming soon', Cantilever: 'Arms for long loads', Shelving: 'Hand-pick units', Mezzanine: 'Raised floor area',
+      'Carton flow': 'Carton lanes, load back, pick front',   // (r8-carton-flow) built — was Coming soon
+      Cantilever: 'Arms for long loads', Shelving: 'Hand-pick units', Mezzanine: 'Raised floor area',
     })
   })
 
   it('RD-library-items: every row but Carton flow is a library item that exists today; Carton flow (not built — FEATURES.md) has none, so it shows disabled, "Coming soon"; Rack Row (multi-bay) is left out of the flyout but still in the library, so a saved one loads', () => {
-    for (const [, rows] of RACK_LIBRARY) for (const r of rows) expect([r.name, storage.includes(r.id)]).toEqual([r.name, r.name !== 'Carton flow'])
+    for (const [, rows] of RACK_LIBRARY) for (const r of rows) expect([r.name, storage.includes(r.id)]).toEqual([r.name, true])   // (r8-carton-flow) Carton flow is built: every row is a library item now
     expect([...RACK_LIBRARY_HIDDEN]).toEqual(['rack_row'])
     expect(storage).toContain('rack_row')
     // every storage item is either a row or hidden: nothing dropped by accident

@@ -10367,11 +10367,11 @@ describe('REG — the hand check by real clicks', () => {
       expect(look.gapRight).toBeLessThanOrEqual(24)
       expect([look.fits, look.rowH, look.glyph, look.fs]).toEqual([true, [28], '20×16', '13px'])
       expect(look.colours).toEqual(['#8FA0D8', '#8FA0D8', '#8FA0D8', '#5BC193', '#5BC193', '#E3A456', '#E3A456', '#E3A456', '#B79BE0', '#B79BE0', '#A9AFAA'])
-      // a rack type not built yet: a disabled row, its tooltip Coming soon
+      // (r8-carton-flow) Carton flow is built now (was a disabled row, Coming soon): enabled, its own tooltip
       const soon = menu.getByRole('menuitem', { name: 'Carton flow' })
-      expect(await soon.isDisabled()).toBe(true)
+      expect(await soon.isDisabled()).toBe(false)
       await soon.hover(); await L.page.waitForTimeout(450)
-      expect(await L.page.getByRole('tooltip').textContent()).toBe('Coming soon')
+      expect(await L.page.getByRole('tooltip').textContent()).toBe('Carton lanes, load back, pick front')
       await L.page.mouse.move(5, 890); await L.page.waitForTimeout(100)
       expect(await menu.getByRole('group').evaluateAll(g => g.map(x => x.getAttribute('aria-label')))).toEqual(['Pallet', 'Lane', 'Flow', 'Other'])
       expect(await menu.getByRole('menuitem').allTextContents()).not.toContain('Rack Row (multi-bay)')
@@ -11771,6 +11771,44 @@ describe('REG — the hand check by real clicks', () => {
       L = await B.openLayout(app, B.fixture('walls-racks'))
       const w = await lnObj('w-west')
       expect([w.width, w.height, w.heightIn, w.backToBack]).toEqual([640, 80, undefined, undefined])
+    }, 3 * T)
+
+    onceIt('REG-r8-carton-flow (click): (r8-carton-flow) Carton flow in the Racking library (no longer Coming soon) places 3 bays of 8 ft, 8 ft deep, 4 levels, 6 lanes a level, back to Select; its number is K3 and its card reads "K3 · 3 bays · 4 levels · 72 carton lanes" with the pitch on the card only; LOAD and PICK are drawn, lane lines and no pallet slots; Lanes per level typed is one undo (96 carton lanes); the end handle dragged a bay adds one (one undo, Ctrl+Z back); the pallet positions never change; the BOM lists it under not in this BOM; save and reload keep every field', async () => {
+      await lnOpen('carton-flow')
+      const k1 = await lnObj('carton-1'), in12 = (v) => Math.round((v / 40) * 12 * 100) / 100
+      const pal = () => L.S('return import("/src/utils/capacity.js").then(M => M.getLayoutCapacity(S.getState().objects).total)')
+      const pal0 = await pal()
+      await lnView(k1)
+      const placed = await lnPlace('Carton flow', { x: k1.x + k1.width / 2, y: k1.y + k1.height + 500 })
+      expect([placed.type, placed.bays, placed.levels, placed.lanesPerLevel, in12(placed.width), in12(placed.height), await L.S('return S.getState().activeTool')]).toEqual(['rack_carton_flow', 3, 4, 6, 288, 96, 'select'])
+      await lnView(placed); await lnSelect(placed)
+      expect(await lnText()).toMatch(/K3 · 3 bays · 4 levels · 72 carton lanes/)
+      expect(await lnText()).toMatch(/Pitch about 0\.5 in per ft/)
+      // drawn: LOAD and PICK, no pitch on the plan
+      const plan = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('Text').map(t => t.text()).join(' | ') })
+      expect(plan).toMatch(/LOAD/); expect(plan).toMatch(/PICK/); expect(plan).not.toMatch(/per ft/)
+      // Lanes per level: one undo
+      let h = await lnHist(); await lnType('Lanes per level', 8)
+      expect([(await lnObj(placed.id)).lanesPerLevel, (await lnHist()) - h]).toEqual([8, 1])
+      expect(await lnCard().locator('[data-carton-lanes]').getAttribute('data-carton-lanes')).toBe('96')
+      // the end handle: a whole bay more, one undo, Ctrl+Z back
+      await L.page.keyboard.press('Escape'); await lnSelect(await lnObj(placed.id))
+      h = await lnHist(); await lnHandle(placed.id, 'mr', 320 * 1.1, 0)
+      let o = await lnObj(placed.id)
+      expect([o.bays, in12(o.width), Math.round(o.x), (await lnHist()) - h]).toEqual([4, 384, Math.round(placed.x), 1])
+      await lnBlurUndo()
+      expect((await lnObj(placed.id)).bays).toBe(3)
+      expect(await pal()).toBe(pal0)
+      // the BOM: not in it (dealer setups vary)
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      expect(await L.page.locator('[data-bom-card="rack_carton_flow"]').count()).toBe(0)
+      expect((await L.page.locator('[data-island="right-card"]').innerText()).replace(/\s+/g, ' ')).toMatch(/3 racks of another kind not in this BOM/)
+      await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
+      // save and reload
+      const saved = await L.S('return SL.serializeScene(S.getState())')
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
+      o = await lnObj(placed.id)
+      expect([o.type, o.bays, o.levels, o.lanesPerLevel, o.bayWidthIn, o.depthIn]).toEqual(['rack_carton_flow', 3, 4, 8, 96, 96])
     }, 3 * T)
 
     onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit (inside the run, both pick faces open), then a click on the run: 2 of 3, one red X', async () => {

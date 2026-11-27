@@ -20,6 +20,7 @@ import { useColumnCheck } from '../../generate/useColumnCheck'   // (lane-fixes 
 import { LaneCard } from '../../studio/LaneCard'   // (r3-drive-in)
 import { laneEngineOn } from '../../racks/laneEngine'
 import { CantileverCard } from '../../studio/CantileverCard'   // (r6-cantilever)
+import { CartonFlowCard } from '../../studio/CartonFlowCard'   // (r8-carton-flow)
 import { Inches } from '../../studio/LaneCard'
 import { shelfSpec, backToBackChange, SHELF_HEIGHT_IN } from '../../racks/shelving'   // (r7-shelving)
 import { nanoid as newIdForZone } from 'nanoid'
@@ -522,10 +523,10 @@ export function PropertiesPanel() {
     </>
   )
 
-  /* (r6-cantilever) a cantilever: its card (studio/CantileverCard.jsx), then More */
-  if (obj.type === 'rack_cantilever') return (
+  /* (r6-cantilever) a cantilever: its card (studio/CantileverCard.jsx), then More; (r8-carton-flow) a carton flow: its own */
+  if (obj.type === 'rack_cantilever' || obj.type === 'rack_carton_flow') return (
     <>
-      <LockedFields locked={locked}><CantileverCard obj={obj} /></LockedFields>
+      <LockedFields locked={locked}>{obj.type === 'rack_cantilever' ? <CantileverCard obj={obj} /> : <CartonFlowCard obj={obj} />}</LockedFields>
       <More locked={locked}>
         <ObjectActions obj={obj} />
         <LockedFields locked={locked}><Appearance obj={obj} up={up} commit={commit} /></LockedFields>

@@ -333,6 +333,7 @@ export const LANE_FACES = {
   rack_drive_through: { top: 'ENTRY', bottom: 'ENTRY' },
   rack_pushback:      { bottom: 'LOAD · PICK' },
   rack_pallet_flow:   { top: 'LOAD', bottom: 'PICK' },
+  rack_carton_flow:   { top: 'LOAD', bottom: 'PICK' },   // (r8-carton-flow)
 }
 /** How far a rack's face words reach past its `side` face ('top' | 'bottom'), world px — 0 with none there. The
  *  selected rack's dimension labels sit past them (canvas2/DimensionLabels.jsx), never over them. */
@@ -350,6 +351,28 @@ export const rackDriveThroughOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_F
 export const rackPushbackOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_pushback, arrows: 'up', posts: 'bars' })
 /** PALLET FLOW · FIFO — loaded at the back, picked at the front, the pallets rolling toward the pick face. */
 export const rackPalletFlowOps = (obj, gs) => laneOps(obj, gs, { faces: LANE_FACES.rack_pallet_flow, arrows: 'down', posts: 'bars' })
+
+/** (r8-carton-flow) CARTON FLOW · FIFO — like pallet flow, LOAD at the back and PICK at the front, the cartons rolling
+ *  toward PICK; no pallet slots: each bay between its frames (a bar the full depth), its carton lanes as lines (lanes per
+ *  level − 1 in each bay, every level's lanes over one another in plan), an arrow in each bay, the face bars and words. */
+export function rackCartonFlowOps(obj, gridSize) {
+  const { x, y, width: w, height: h } = obj, c = colorsOf(obj)
+  const bays = Math.max(1, Math.round(obj.bays || Math.round(w / (8 * gridSize)) || 1)), bw = w / bays
+  const lanes = Math.max(1, Math.round(obj.lanesPerLevel || 6))
+  const postW = inch(3, gridSize)
+  const ops = [body(x, y, w, h, c.line)]
+  const segs = []
+  for (let b = 0; b < bays; b++) for (let k = 1; k < lanes; k++) { const lx = x + b * bw + (bw * k) / lanes; segs.push(lx, y, lx, y + h) }
+  const lo = linesOp(segs, c.tint, RACK_LINE.hair, { name: 'carton-lanes' })
+  if (lo) ops.push(lo)
+  ops.push({ op: 'uprights', name: 'lane-posts', rects: Array.from({ length: bays + 1 }, (_, i) => ({ x: Math.min(x + w - postW, Math.max(x, x + i * bw - postW / 2)), y, w: postW, h })), fill: c.line })
+  ops.push({ op: 'uprights', name: 'face-bar', rects: [faceBar(obj, 'top', gridSize), faceBar(obj, 'bottom', gridSize)], fill: c.line })
+  const len = Math.min(h * 0.35, bw * 0.6), head = Math.min(len * 0.32, bw * 0.12)
+  if (len > 0) ops.push({ op: 'arrows', items: Array.from({ length: bays }, (_, b) => ({ x: x + (b + 0.5) * bw, y0: y + h / 2 - len / 2, y1: y + h / 2 + len / 2 })), head, color: c.line, strokeWidth: inch(ARROW_STROKE_IN, gridSize) })
+  ops.push(faceText(obj, 'top', 'LOAD', c.line, gridSize))
+  ops.push(faceText(obj, 'bottom', 'PICK', c.line, gridSize))
+  return ops
+}
 
 /** Tower centres and the spine band for a cantilever.
  *  Towers are spread evenly across the object's own width rather than at a
@@ -410,6 +433,10 @@ export function markBoxes(obj, gridSize = 40) {
     // (r7-shelving) back-to-back: two runs sharing the back — a box per unit on each
     if (obj.backToBack) return [0, 1].flatMap(r => Array.from({ length: n }, (_, i) => ({ x: obj.x + i * uw, y: obj.y + r * obj.height / 2, w: uw, h: obj.height / 2 })))
     return Array.from({ length: n }, (_, i) => ({ x: obj.x + i * uw, y: obj.y, w: uw, h: obj.height }))
+  }
+  if (obj?.type === 'rack_carton_flow') {   // (r8-carton-flow) a box per bay
+    const bays = Math.max(1, Math.round(obj.bays || 1)), bw = obj.width / bays
+    return Array.from({ length: bays }, (_, i) => ({ x: obj.x + i * bw, y: obj.y, w: bw, h: obj.height }))
   }
   if (obj?.type === 'rack_cantilever') {
     const { doubleSided, towers, spineH, spineY, cxs } = cantileverGeom(obj, gridSize)
@@ -481,6 +508,7 @@ const BUILDERS = {
   rack_drive_through: rackDriveThroughOps,
   rack_pushback: rackPushbackOps,
   rack_pallet_flow: rackPalletFlowOps,
+  rack_carton_flow: rackCartonFlowOps,
   rack_cantilever: rackCantileverOps,
   rack_mezzanine: rackMezzanineOps,
   rack_shelving: rackShelvingOps,
