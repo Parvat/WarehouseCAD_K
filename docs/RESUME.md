@@ -36,6 +36,22 @@ Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
 9. **Zoom p95 53 ms (CPU slowed 4×):** accepted. Do not cache racks as an image.
 10. **Older customer files:** PP will add some later. Nothing to do now.
 
+**Two-day run (2026-11-27, PP away; branch two-day-run, not merged):** pushback-config, then r6-cantilever,
+r7-shelving, r8-carton-flow, r9-mezzanine and filler-text-pdf, chained in that order (each branch from the one before);
+two-day-run is their tip. Each has a report in docs/reports/<branch>.md; the run's questions for PP are at the end of each.
+- **r6-cantilever:** its card (Sides, Columns, spacing, arm length, levels, first arm, column height, arm type, base), load
+  spots on the card (never pallet positions), whole-column handles, its BOM section (Column, Arm, Base, Brace, Anchor).
+- **r7-shelving:** Height and Back-to-back (only the two fronts picked), whole-unit handles, its BOM section (Post, Long
+  beam, Short beam, Deck), the label "… · 7 ft".
+- **r8-carton-flow:** a new type (amber, K, LOAD back / PICK front, lane lines, no slots), its card, carton lanes on the
+  card; its BOM off behind LANE_BOMS_PENDING_ON (a draft kept).
+- **r9-mezzanine:** its card (size, deck height, column grid in whole bays, deck type, stairs dragged along the edges,
+  pallet gates, handrail), area in sq ft / m², warnings for a stair landing and a gate's face aisle; BOM off.
+- **filler-text-pdf:** the overlap scan and PDF parity over every type; the mezzanine's title and size line spaced.
+- **filler-perf:** the perf check against the holiday run (report only). **Polish:** nothing safe left (the three open
+  items need a design icon or change what a click does — for PP).
+- **New fixtures:** cantilever, shelving, carton-flow, mezzanine (src/__test__/plan/handCheck/).
+
 **pushback-config (2026-11-27, branch, from master 5a591ec):** the push-back frame split is a dealer setting (PP is not
 sure; dealers differ): the card's Max pallets per frame (2 to 6, a new rack 2) and Longer frame at (Front / Rear), N =
 ceil(deep / max); the line under them lists the frames front first. Saved push-backs read 3 / Front — unchanged. The

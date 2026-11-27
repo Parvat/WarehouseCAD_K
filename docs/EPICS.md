@@ -32,6 +32,10 @@ Platform (PL1–PL5) after its open questions are answered (FEATURES.md, Platfor
   a BOM section per type. **Not built:** Fill / Generate blocks of lanes (Generate has no rack-type choice — parked by PP with
   Generate option B), elevations of lane racks, carton flow. The holiday prompt numbered push-back R4 and pallet flow R5; in this plan both
   are R4. **R5 (cantilever + shelving)** is not started beyond rack-round3 (shelving sizes) and rack-xmarks.
+- **R6–R9 — built on branch two-day-run (2026-11-27, PP away; not merged):** R6 cantilever (card, load spots, BOM),
+  R7 shelving (height, back-to-back, BOM), R8 carton flow (a new type; BOM off behind LANE_BOMS_PENDING_ON), R9 mezzanine
+  (card, column grid, stairs, gates, handrail, warnings; BOM off). Reports r6-cantilever … r9-mezzanine; their BOM
+  formulas are questions for PP. **Not built for these types:** Fill / Generate, elevations.
 - **R1 — done** (branch r1-rack-registry): `utils/rackTypes.js` replaces 31 local beam-rack lists and 4 name tables;
   REG-rack-types-same (recorded on master d9f6984) and RT_rackTypes. Audit findings carried forward: lane racks count
   lanes × deep and ignore levels (fix in R3/R4); the card calls a back-to-back pair "Double deep" (rename in R2).
