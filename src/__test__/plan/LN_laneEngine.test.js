@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { laneSpec, laneNew, laneChange, laneResize, laneSizeIn } from '../../racks/laneEngine'
-import { laneParts, laneBom } from '../../racks/laneBom'
+import { laneParts, laneBom, laneBomTypes } from '../../racks/laneBom'
 import { getRackCapacity, laneLevels } from '../../utils/capacity'
 import { computeBom } from '../../utils/bom'
 
@@ -116,8 +116,11 @@ describe('lane BOM — the formulas (L 4, D 5, V 4)', () => {
   it('the BOM: its own section under its letters; the beam racks\' BOM untouched', () => {
     const f = load('lane-drive')
     const b = computeBom(f.objects, f.elevations, { gridSize: GS })
-    expect(b.types.map(t => [t.id, t.name, t.rows.map(r => r.tag)])).toEqual([['rack_drive_in', 'Drive-in racking', ['D1']], ['rack_drive_through', 'Drive-through racking', ['T1']]])
-    expect(b.flags.filter(x => x.key === 'other')).toEqual([])
+    // (lane-fixes 0, PP) the drive-in and drive-through BOMs are off until the dealer details are in: no section, listed
+    // under "not in this BOM" as before; the sections are still there behind the one setting
+    expect(b.types).toEqual([])
+    expect(b.flags.find(x => x.key === 'other').ids.sort()).toEqual(f.objects.filter(o => /^rack_drive/.test(o.type)).map(o => o.id).sort())
+    expect(laneBom(f.objects, f.elevations, { gridSize: GS, types: laneBomTypes(true) }).map(t => [t.id, t.name, t.rows.map(r => r.tag)])).toEqual([['rack_drive_in', 'Drive-in racking', ['D1']], ['rack_drive_through', 'Drive-through racking', ['T1']]])
     for (const name of ['older-horizontal', 'crowded-vertical']) {
       const g = load(name), bb = computeBom(g.objects, g.elevations, { gridSize: GS })
       expect([name, bb.types]).toEqual([name, []])
@@ -127,9 +130,9 @@ describe('lane BOM — the formulas (L 4, D 5, V 4)', () => {
 })
 
 describe('(r4-push-back) push-back on the lane engine', () => {
-  it('a new push-back: 3 lanes × 4 deep × 3 levels, first beam at the floor; 36 positions', () => {
+  it('a new push-back: 3 lanes × 4 deep × 3 levels, first beam at 8 in (lane-fixes 3, PP: rails on it, the bottom level push-back too); 36 positions', () => {
     const o = mk('rack_pushback'), s = laneSpec(o, GS)
-    expect([s.lanes, s.deep, s.levels, s.firstIn, s.laneWIn, s.stationIn, inch(o.width), inch(o.height)]).toEqual([3, 4, 3, 0, 46, 52, 3 * 46 + 4 * 3, 4 * 52])
+    expect([s.lanes, s.deep, s.levels, s.firstIn, s.laneWIn, s.stationIn, inch(o.width), inch(o.height)]).toEqual([3, 4, 3, 8, 46, 52, 3 * 46 + 4 * 3, 4 * 52])
     expect(getRackCapacity(o).total).toBe(36)
   })
   it('deep kept within 2 to 6 — typed and by the handle', () => {
@@ -141,11 +144,12 @@ describe('(r4-push-back) push-back on the lane engine', () => {
   it('the BOM formulas (L 3, D 4, V 3; frame lines 3 from 4 deep, 2 up to 3)', () => {
     const o = mk('rack_pushback')
     expect(laneParts(o, 3, GS).map(p => [p.part, p.size, p.qty])).toEqual([
-      ['Upright frame', '15 ft × 17 ft 4 in', 4 * 3],   // P × F
-      ['Beam', '46 in', 2 * 3 * 3],                      // 2 L V (front and rear)
+      ['Upright frame', '15 ft 8 in × 17 ft 4 in', 4 * 3],   // P × F (8 in first beam + 3 × 60)
+      ['Beam', '46 in', 3 * 3 * 3],                      // (lane-fixes 1) L V F — was 2 L V, short from 4 deep
       ['Rail set', '4 deep', 3 * 3],                     // L V
       ['Cart', '', 3 * 3 * 3],                           // (D − 1) L V
       ['Entry guide', '', 2 * 3],                        // 2 L
+      ['Anchor', '', 2 * 4 * 3],                         // (lane-fixes 2) 2 per post, P × F posts
     ])
     expect(laneParts(mk('rack_pushback', { palletDeep: 3, height: px(3 * 52) }), 3, GS)[0].qty).toBe(4 * 2)
   })
@@ -175,7 +179,9 @@ describe('(r5-pallet-flow) pallet flow on the lane engine', () => {
   })
   it('the BOM: a Pallet flow racking section under F1, F2', () => {
     const f = load('lane-flow'), b = computeBom(f.objects, f.elevations, { gridSize: GS })
-    expect(b.types.map(t => [t.name, t.rows.map(r => r.tag)])).toEqual([['Pallet flow racking', ['F1', 'F2']]])
-    expect(b.flags.filter(x => x.key === 'other')).toEqual([])
+    // (lane-fixes 0) off until the dealer details are in: flagged as before; behind the setting, its section
+    expect(b.types).toEqual([])
+    expect(b.flags.find(x => x.key === 'other').ids.length).toBe(2)
+    expect(laneBom(f.objects, f.elevations, { gridSize: GS, types: laneBomTypes(true) }).map(t => [t.name, t.rows.map(r => r.tag)])).toEqual([['Pallet flow racking', ['F1', 'F2']]])
   })
 })

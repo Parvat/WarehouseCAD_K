@@ -36,8 +36,7 @@ import { isSection, polygonOf, pointInPolygon } from './sectionAreas'
 import { lineNamer, namedRows, lineSections } from './lineNames'
 import { isDefaultUnits, fmtLength, unitsNow } from '../utils/units'   // (units) the project's units
 import { deepOf, deepGapOf } from './deep'   // (r2-double-deep)
-import { laneBom } from '../racks/laneBom'   // (r3-drive-in) the lane racks' own sections
-import { LANE_ENGINE_ON } from '../racks/laneEngine'
+import { laneBom, laneBomTypes } from '../racks/laneBom'   // (r3-drive-in) the lane racks' own sections; (lane-fixes) only those on
 
 export const BOM_DEFAULTS = {
   decks: [
@@ -198,9 +197,11 @@ export function computeBom(objects, T, { gridSize = 40, settings = null } = {}) 
   }
 
   // (r3-drive-in) the lane racks the engine runs have their own sections (`types`); the rest are still flagged
-  const others = (objects || []).filter(o => OTHER_RACK.test(o.type || '') && !isBomRack(o) && !LANE_ENGINE_ON.has(o.type))
+  // (lane-fixes) only the lane types whose BOM is on (push-back); drive-in, drive-through and pallet flow are flagged again
+  const laneOn = laneBomTypes()
+  const others = (objects || []).filter(o => OTHER_RACK.test(o.type || '') && !isBomRack(o) && !laneOn.has(o.type))
   if (others.length) for (const o of others) flag('other', (n) => `${n} rack${n === 1 ? '' : 's'} of another kind not in this BOM (selective and back-to-back only)`, o.id)
-  const types = laneBom(objects || [], T, { gridSize, types: LANE_ENGINE_ON })
+  const types = laneBom(objects || [], T, { gridSize, types: laneOn })
 
   // the lines R1 … that have a count, each in the drawn section holding its middle (else Unassigned)
   const secs = (objects || []).filter(isSection), polys = secs.map(polygonOf)

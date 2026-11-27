@@ -39,6 +39,8 @@ import { useLabelObjects, useLabelsHeld } from './settled'
 import { useDragPreview } from './dragPreview'   // (drag-perf-bar)
 import { RACK_NUMBER } from '../render/rackFamily'   // (rack-design) the rack numbers' colour
 import { faceWordsReach } from '../render/rackOps'   // (rack-round3 5)
+import { beamOffWalls } from './beamOffWalls'   // (lane-fixes 6)
+export { beamOffWalls }
 
 const WORDS = RACK_NUMBER, TICK = '#2E7D5B', FONT = "'Plus Jakarta Sans', system-ui, sans-serif"
 /** The label's size in drawing units: the aisle labels' 10 at the Label size. */
@@ -222,7 +224,9 @@ export function placeRowLabels(lines, fs, avoid = [], name, objects = [], gs = 4
   // (text-and-overlap) a beam line's number never on a column either (the demo's R6 sat on a wall column): it slides along
   // its end off it, as off an aisle label — no column near: exactly where it was
   const cols = objects.length ? layoutColumns(objects, gs).map(c => ({ x: c.x, y: c.y, w: c.w, h: c.h })) : []
-  const p1 = rowLabelPlaces(beam, fs, cols.length ? [...avoid, ...cols] : avoid, name)
+  const p0 = rowLabelPlaces(beam, fs, cols.length ? [...avoid, ...cols] : avoid, name)
+  // (lane-fixes 6) a beam number that straddles a wall goes just outside it, centred on the row (the other types' rule)
+  const p1 = objects.length ? beamOffWalls(p0, fs, [...avoid, ...cols], objects, gs) : p0
   if (!oth.length) return p1
   return [...p1, ...otherLabelPlaces(oth, fs, [...avoid, ...otherAvoid(objects, gs), ...p1], name, objects, gs)]
 }

@@ -14,7 +14,7 @@ import { rememberStylesOf } from '../../utils/drawStyles'
 import { WidthPick } from '../../studio/drawnBar'
 import { Swatch } from '../../studio/Swatch'
 import { SizeInput } from '../../studio/textSizeCard'
-import { shelvingLabel, shelvingTag, shelvesOf, isStandard, SHELF_UNIT_IN, SHELF_DEPTH_IN, unitWidthChange, unitCountChange, depthChange } from '../../utils/shelving'   // (rack-round3 6)
+import { shelvingLabel, shelvingTag, shelvesOf, isStandard, SHELF_UNIT_IN, SHELF_DEPTH_IN, unitWidthChange, unitCountChange, depthChange, shelvingUsable } from '../../utils/shelving'   // (rack-round3 6)
 import { shelvingUnits } from '../../render/rackOps'
 import { LaneCard } from '../../studio/LaneCard'   // (r3-drive-in)
 import { laneEngineOn } from '../../racks/laneEngine'
@@ -658,6 +658,9 @@ function SizeBlock({ obj, gridSize }) {
 function ShelvingFields({ obj, gridSize }) {
   const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
   const { n, unitIn, depthIn } = shelvingUnits(obj, gridSize)
+  // (lane-fixes 5) the units a zone or a rack covers (a red X each) come off usable
+  const objects = useCanvasStore(s => s.objects)
+  const use = shelvingUsable(objects, obj, gridSize)
   const tag = (v, list) => (isStandard(v, list) ? null : <span data-custom-size style={{ fontSize: 11, color: C.faint, marginLeft: 6 }}>Custom</span>)
   return (
     <div data-shelving-fields style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -673,6 +676,9 @@ function ShelvingFields({ obj, gridSize }) {
           <SizeInput inches={depthIn} aria="Depth (in)" options={SHELF_DEPTH_IN} custom onCommit={v => { if (v > 0) set(depthChange(v, gridSize)) }} />
         </Field>
       </Grid2>
+      <div data-shelving-usable={use.usable} style={{ fontSize: 12, color: use.lost ? C.text : C.muted }}>
+        {`${use.usable} of ${use.units} unit${use.units === 1 ? '' : 's'} usable`}{use.lost ? ` · ${use.lost} covered` : ''}
+      </div>
     </div>
   )
 }

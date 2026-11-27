@@ -11418,12 +11418,11 @@ describe('REG — the hand check by real clicks', () => {
       // Floor guides off: out of the BOM
       await lnCard().getByRole('switch', { name: 'Floor guides' }).click(); await L.page.waitForTimeout(300)
       await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
-      const sec = L.page.locator('[data-bom-card="rack_drive_in"]')
-      const st = (await sec.innerText()).replace(/\s+/g, ' ')
-      expect(st).toMatch(/^Drive-in racking D1 /)
-      expect(st).not.toContain('Floor guide')
-      expect(st).toContain('Rail arm')
-      expect(await L.page.locator('[data-bom-card="rack_drive_through"]').innerText()).toMatch(/T1/)
+      // (lane-fixes 0, PP) the drive-in and drive-through BOMs are off until the dealer details are in: no section, both
+      // racks listed under "not in this BOM" as before the holiday run (the Floor guides switch stays on the card)
+      expect(await L.page.locator('[data-bom-card="rack_drive_in"]').count()).toBe(0)
+      expect(await L.page.locator('[data-bom-card="rack_drive_through"]').count()).toBe(0)
+      expect(await L.page.locator('[data-bom-flag="other"]').innerText()).toMatch(/not in this BOM/)
       await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
       // save and reload: every field kept
       const keep = ['lanes', 'palletDeep', 'levels', 'levelsOwn', 'palletWIn', 'palletDIn', 'clearIn', 'stationIn', 'uprightWidth', 'firstIn', 'spacingIn', 'floorGuides', 'width', 'height', 'x', 'y', 'rotation', 'type']
@@ -11442,7 +11441,7 @@ describe('REG — the hand check by real clicks', () => {
       const p1 = await lnObj('lane-1')
       await lnView(p1)
       const placed = await lnPlace('Push-back', { x: p1.x + p1.width / 2, y: p1.y + p1.height + 500 })
-      expect(placed && [placed.type, placed.lanes, placed.palletDeep, placed.levels, placed.firstIn, Math.round(placed.width / 40 * 12), Math.round(placed.height / 40 * 12)]).toEqual(['rack_pushback', 3, 4, 3, 0, 150, 208])
+      expect(placed && [placed.type, placed.lanes, placed.palletDeep, placed.levels, placed.firstIn, Math.round(placed.width / 40 * 12), Math.round(placed.height / 40 * 12)]).toEqual(['rack_pushback', 3, 4, 3, 8, 150, 208])   // (lane-fixes 3) first beam 8 in (was 0)
       expect(await L.S('return S.getState().activeTool')).toBe('select')
       await L.page.keyboard.press('Control+z'); await L.page.waitForTimeout(300)
       await lnView(p1); await lnSelect(p1)
@@ -11471,7 +11470,7 @@ describe('REG — the hand check by real clicks', () => {
       await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
       const st = (await L.page.locator('[data-bom-card="rack_pushback"]').innerText()).replace(/\s+/g, ' ')
       expect(st).toMatch(/^Push-back racking P1, P2 /)
-      for (const part of ['Frame', 'Beam', 'Rail set', 'Cart', 'Entry guide']) expect([part, st.includes(part)]).toEqual([part, true])
+      for (const part of ['Frame', 'Beam', 'Rail set', 'Cart', 'Entry guide', 'Anchor']) expect([part, st.includes(part)]).toEqual([part, true])   // (lane-fixes 2) + anchors
       expect(st).toMatch(/Cart 54( |$)/)                          // 2 racks × (4 − 1) × 3 × 3
       await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
       const before = await lnObj('lane-1')
@@ -11517,15 +11516,119 @@ describe('REG — the hand check by real clicks', () => {
       await lnBlurUndo()
       // the BOM
       await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
-      const st = (await L.page.locator('[data-bom-card="rack_pallet_flow"]').innerText()).replace(/\s+/g, ' ')
-      expect(st).toMatch(/^Pallet flow racking F1, F2 /)
-      for (const part of ['Frame', 'Beam', 'Roller track', 'Speed controller', 'Pallet stop', 'Entry guide']) expect([part, st.includes(part)]).toEqual([part, true])
+      // (lane-fixes 0, PP) the pallet-flow BOM is off until the dealer details are in: no section; listed under "not in this BOM"
+      expect(await L.page.locator('[data-bom-card="rack_pallet_flow"]').count()).toBe(0)
+      expect(await L.page.locator('[data-bom-flag="other"]').innerText()).toMatch(/not in this BOM/)
       await L.page.getByRole('tab', { name: 'Properties' }).click(); await L.page.waitForTimeout(200)
       const before = await lnObj('lane-1')
       const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, await L.S('return SL.serializeScene(S.getState())'))
       const after = await lnObj('lane-1')
       expect(['lanes', 'palletDeep', 'levels', 'pitchInPerFt', 'width', 'height', 'x', 'y'].map(k => after[k])).toEqual(['lanes', 'palletDeep', 'levels', 'pitchInPerFt', 'width', 'height', 'x', 'y'].map(k => before[k]))
     }, 3 * T)
+    /* ── lane-fixes (docs/reports/lane-fixes.md): PP's answers to the holiday run's questions ── */
+    onceIt('REG-lane-fixes-bom (click): (lane-fixes 0, 1, 2, 4) the drive-in, drive-through and pallet-flow BOMs are off — no section in the BOM tab, the CSV or the xlsx, the racks listed under "not in this BOM"; the push-back section counts beams = lanes × levels × frame lines and 2 anchors per post, and shows in the Tally drawer (By row and Summary), the pop-out and its downloaded xlsx', async () => {
+      const fs = await import('node:fs'), X = await import('../../utils/xlsx.js')
+      // lane-drive: no lane section anywhere, the racks flagged
+      await lnOpen('lane-drive')
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      const tab = L.page.getByRole('tabpanel', { name: 'BOM' })
+      expect(await L.page.locator('[data-bom-card^="rack_"]').count()).toBe(0)
+      expect(await tab.locator('[data-bom-flag="other"]').innerText()).toMatch(/2 racks of another kind not in this BOM/)
+      // the CSV of a layout with beam racks and a drive-in (crossaisle-drivein): the beam lines, no drive-in section
+      await lnOpen('crossaisle-drivein')
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      const [csv] = await Promise.all([L.page.waitForEvent('download'), L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Download CSV' }).click()])
+      const csvText = fs.readFileSync(await csv.path(), 'utf8')
+      expect(csvText).toMatch(/not in this BOM/)
+      expect(csvText).toMatch(/Beam/)
+      expect(csvText).not.toMatch(/Drive-in|Drive-through|Rail arm/)
+      // lane-push: the section, beams L × V × F and anchors 2 per post, both racks 3 × 4 × 3 (F = 3)
+      await lnOpen('lane-push')
+      await L.page.getByRole('tab', { name: 'BOM' }).click(); await L.page.waitForTimeout(500)
+      const st = (await L.page.locator('[data-bom-card="rack_pushback"]').innerText()).replace(/\s+/g, ' ')
+      expect(st).toMatch(/Beam 46 in 54( |$)/)                     // 2 racks × 3 lanes × 3 levels × 3 frame lines (was 36)
+      expect(st).toMatch(/Anchor 48( |$)/)                         // 2 racks × 2 × 4 posts × 3 frame lines
+      // the Tally drawer: By row, then Summary
+      await L.page.getByRole('tabpanel', { name: 'BOM' }).getByRole('button', { name: 'Tally', exact: true }).click(); await L.page.waitForTimeout(500)
+      const drawer = L.page.locator('[data-tally-drawer]')
+      const lt = drawer.locator('[data-lane-table="rack_pushback"]')
+      expect((await lt.innerText()).replace(/\s+/g, ' ')).toMatch(/^Push-back racking ?P1, P2 Part Size P1 P2 Total /)
+      expect(await lt.locator('[data-lane-part="Anchor"] [data-grand-total]').innerText()).toBe('48')
+      await drawer.getByText('Summary', { exact: true }).click(); await L.page.waitForTimeout(300)
+      expect(await drawer.locator('[data-lane-table="rack_pushback"]').count()).toBe(1)
+      // the pop-out and its xlsx
+      await drawer.getByRole('button', { name: 'Pop out' }).click(); await L.page.waitForTimeout(400)
+      const dlg = L.page.getByRole('dialog', { name: 'Bill of materials' })
+      expect(await dlg.locator('[data-lane-table="rack_pushback"]').count()).toBe(1)
+      const [dl] = await Promise.all([L.page.waitForEvent('download'), dlg.getByRole('button', { name: 'Download xlsx' }).click()])
+      const cells = X.sheetCells(X.readStoredZip(new Uint8Array(fs.readFileSync(await dl.path())))['xl/worksheets/sheet1.xml'])
+      const at = cells.findIndex(r => r && r[0] === 'Push-back racking · P1, P2')
+      expect(at).toBeGreaterThan(2)
+      expect(cells[at + 1].filter(v => v != null)).toEqual(['Part', 'Size', 'P1', 'P2', 'Total'])
+      const anchor = cells.slice(at + 2).find(r => r && r[0] === 'Anchor')
+      expect(anchor.filter(v => v != null && v !== '').map(String)).toEqual(['Anchor', '24', '24', '48'])
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+    }, 3 * T)
+
+    onceIt('REG-lane-fixes-pushback-first (click): (lane-fixes 3) a push-back placed from the library has its first beam at 8 in (the card shows 8); a saved one keeps its value', async () => {
+      await lnOpen('lane-push')
+      const p1 = await lnObj('lane-1'), saved = p1.firstIn
+      await lnView(p1)
+      const placed = await lnPlace('Push-back', { x: p1.x + p1.width / 2, y: p1.y + p1.height + 500 })
+      expect([placed.type, placed.firstIn]).toEqual(['rack_pushback', 8])
+      await lnView(placed); await lnSelect(placed)
+      expect(await lnCard().getByRole('combobox', { name: 'First beam (in)' }).inputValue()).toBe('8')
+      await lnView(p1); await lnSelect(p1)
+      expect(await lnCard().getByRole('combobox', { name: 'First beam (in)' }).inputValue()).toBe(String(saved ?? 0))
+      expect((await lnObj('lane-1')).firstIn).toBe(saved)
+    }, 2 * T)
+
+    onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit, then a click on the run: 2 of 3, one red X', async () => {
+      const B = await import('./handCheck/browser.js')
+      L = await B.openLayout(app, B.fixture('older-horizontal'))
+      const fp = await fpOf()
+      const x = fp.x + fp.width + 600, y = fp.y + 200
+      await L.S('const st = S.getState(), lay = st.objects.find(o => /^rack_/.test(o.type)).layerId; S.setState({ objects: [...st.objects, { id: "sh-lf", type: "rack_shelving", x: arg.x, y: arg.y, width: 480, height: 80, rotation: 0, layerId: lay }] })', { x, y })
+      const sh = await lnObj('sh-lf')
+      await lnView(sh, 0.6); await lnSelect(sh)
+      expect(await lnCard().locator('[data-shelving-usable]').innerText()).toBe('3 of 3 units usable')
+      await L.S('const st = S.getState(), z = st.objects.find(o => /^zone_/.test(o.type)), lay = z ? z.layerId : st.objects.find(o => /^rack_/.test(o.type)).layerId; S.setState({ objects: [...st.objects, { id: "z-lf", type: "zone_office", x: arg.x, y: arg.y - 40, width: 100, height: 200, rotation: 0, layerId: lay }] })', { x, y })
+      await lnSelect({ ...sh, x: sh.x + 300, width: 100 })
+      expect(await lnCard().locator('[data-shelving-usable]').innerText()).toBe('2 of 3 units usable · 1 covered')
+      expect(await L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.rack-overlap'); return g ? g.find('Line').length / 2 : 0 })).toBe(1)
+    }, 2 * T)
+
+    onceIt('REG-lane-fixes-wall-numbers (click): (lane-fixes 6) on the demo file and the four fixtures no rack number touches a wall (one straddling a wall went just outside it, centred on its row); the demo\'s R1 sits outside the west wall', async () => {
+      const B = await import('./handCheck/browser.js'), fs = await import('node:fs')
+      const demo = fs.readFileSync(new URL('../../../docs/demo/demo-warehouse.wcad', import.meta.url), 'utf8')
+      const found = []
+      for (const [name, json] of [['demo', demo], ...B.FIXTURES.map(f => [f, B.fixture(f)])]) {
+        L = await B.openLayout(app, json)
+        const fp = await fpOf()
+        await L.S('S.setState({ zoom: 0.3, panX: 100 - arg.x * 0.3, panY: 100 - arg.y * 0.3, selectedIds: [] })', fp); await L.page.waitForTimeout(400)
+        const bands = await L.S('return import("/src/canvas2/beamOffWalls.js").then(M => { const st = S.getState(), z = st.zoom; return M.straightWalls(st.objects, st.gridSize || 40).map(w => w.dir === "v" ? { x: Math.min(w.at, w.in), y: w.a, w: Math.abs(w.at - w.in), h: w.b - w.a } : { x: w.a, y: Math.min(w.at, w.in), w: w.b - w.a, h: Math.abs(w.at - w.in) }).map(b => ({ x: b.x * z + st.panX, y: b.y * z + st.panY, w: b.w * z, h: b.h * z })) })')
+        const labels = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('.rack-line-label').map(t => { const r = t.getClientRect(); return { t: t.text(), x: r.x, y: r.y, w: r.width, h: r.height } }) })
+        for (const a of labels) for (const b of bands) if (Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0.5 && Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0.5) found.push(`${name}: ${a.t}`)
+        if (name === 'demo') {
+          const r1 = labels.find(l => l.t === 'R1'), west = await L.S('const st = S.getState(); return arg.x * st.zoom + st.panX', fp)
+          expect(r1.x + r1.w).toBeLessThan(west)
+        }
+      }
+      expect(found).toEqual([])
+    }, 4 * T)
+
+    onceIt('REG-lane-fixes-pitch (click): (lane-fixes 7) a pallet flow\'s pitch shows on its card only — never on the plan or in the PDF', async () => {
+      await lnOpen('lane-flow')
+      const f1 = await lnObj('lane-1')
+      await lnView(f1); await lnSelect(f1)
+      expect(await lnText()).toMatch(/Pitch about 0\.375 in per ft/)
+      const plan = await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('Text').map(t => t.text()).join(' | ') })
+      expect(plan).not.toMatch(/pitch|0\.375|3\/8|per ft/i)
+      const svg = await L.S('return import("/src/export/pdfExport.js").then(M => { const st = S.getState(); return M.buildLayoutSVG(st.objects, st.layers, st.gridSize, { elevations: st.elevations }).svg })')
+      expect(String(svg).length).toBeGreaterThan(1000)
+      expect(String(svg)).not.toMatch(/pitch|0\.375|3\/8|per ft/i)
+    }, 2 * T)
+
     /* ── text-and-overlap (docs/reports/text-and-overlap.md) ── */
     onceIt('REG-text-overlap (click): (text-and-overlap) the demo file and the four fixtures, each viewed tile by tile across the whole building at 15, 30 and 100 %: no two labels on the canvas overlap (every visible text — row numbers, aisle and face chips, names, chains, bubbles, badges), and no row number or aisle chip sits on a rack or a column', async () => {
       const B = await import('./handCheck/browser.js'), fs = await import('node:fs')

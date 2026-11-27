@@ -8,7 +8,7 @@ import { useLayoutCheck } from '../utils/layoutCheck'
 import { C, MONO, Note, Btn, Seg } from './cardParts'
 import { Icon } from './Icon'
 import { useViewPrefs } from './viewPrefs'
-import { BomTable, ByRowTable, highlightLine, downloadCsv, downloadXlsx, baseName, PART_CELL, SIZE_CELL } from './BomTab'
+import { BomTable, ByRowTable, LaneTables, highlightLine, downloadCsv, downloadXlsx, baseName, PART_CELL, SIZE_CELL } from './BomTab'
 import { setTallyFocus, setTallied, clearTallied, checkedNos } from './tally'
 import { useTally, closeTally, popOutTally, closeTallyModal, TALLY_LEFT, TALLY_RIGHT, TALLY_BOTTOM, TALLY_ISLAND_GAP, selectedLineNos, useShownTallyH } from './tally'
 import { useSettledStore, useSettledObjects } from '../canvas2/settled'   // (drag-perf-bar) held still during a drag
@@ -98,6 +98,8 @@ function TallyTable({ bom, scrollRef, lineOf, checked }) {
           ))}
         </tbody>
       </table>
+      {/* (lane-fixes) the push-back section(s), as the BOM tab and CSV have them */}
+      <div style={{ padding: '0 16px 8px' }}><LaneTables bom={bom} /></div>
     </div>
   )
 }
@@ -159,7 +161,7 @@ function Drawer({ bom, flags, xlsx }) {
       {flags && <div style={{ padding: '8px 16px 0', flexShrink: 0 }}>{flags}</div>}
       {view === 'rows'
         ? <TallyTable bom={bom} scrollRef={scrollRef} lineOf={lineOf} checked={checked} />
-        : <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, padding: '4px 16px 12px' }}><SummaryTable bom={bom} /></div>}
+        : <div ref={scrollRef} style={{ overflow: 'auto', flex: 1, minHeight: 0, padding: '4px 16px 12px' }}><SummaryTable bom={bom} /><LaneTables bom={bom} /></div>}
     </div>
   )
 }
@@ -190,6 +192,7 @@ function Modal({ bom, flags, xlsx, csv }) {
         <div style={{ overflowY: 'auto', padding: '12px 20px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           {flags}
           {view === 'rows' ? <ByRowTable bom={bom} /> : <SummaryTable bom={bom} />}
+          <LaneTables bom={bom} wide />
         </div>
       </div>
     </div>,

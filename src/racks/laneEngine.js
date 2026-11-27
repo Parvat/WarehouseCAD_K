@@ -28,7 +28,7 @@ const BASE = { palletWIn: 40, palletDIn: 48, clearIn: 3, stationAddIn: 4, postIn
 export const LANE_DEFAULTS = {
   rack_drive_in:      { ...BASE, lanes: 4, deep: 5, levels: 4, firstIn: 8, floorGuides: true },
   rack_drive_through: { ...BASE, lanes: 4, deep: 5, levels: 4, firstIn: 8, floorGuides: true },
-  rack_pushback:      { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, minDeep: 2, maxDeep: 6 },
+  rack_pushback:      { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, newFirstIn: 8, minDeep: 2, maxDeep: 6 },   // (lane-fixes) a new one: first beam 8 in, rails on it; a saved one without the field reads 0
   rack_pallet_flow:   { ...BASE, lanes: 3, deep: 4, levels: 3, firstIn: 0, pitchInPerFt: 0.375 },
 }
 /** Each type's name in words (the card, the BOM). */
@@ -66,7 +66,7 @@ export function laneNew(type, gridSize = 40) {
   const { w, h } = laneSizeIn(s)
   return {
     lanes: d.lanes, palletDeep: d.deep, levels: d.levels, levelsOwn: true, palletWIn: d.palletWIn, palletDIn: d.palletDIn,
-    clearIn: d.clearIn, stationIn: s.stationIn, uprightWidth: d.postIn, firstIn: d.firstIn, spacingIn: d.spacingIn,
+    clearIn: d.clearIn, stationIn: s.stationIn, uprightWidth: d.postIn, firstIn: d.newFirstIn ?? d.firstIn, spacingIn: d.spacingIn,
     ...(d.floorGuides ? { floorGuides: true } : {}), ...(d.pitchInPerFt ? { pitchInPerFt: d.pitchInPerFt } : {}),
     width: (w / 12) * gridSize, height: (h / 12) * gridSize,
   }

@@ -5,6 +5,7 @@
 import { shelvingUnits, SHELF_UNIT_IN, SHELF_DEPTH_IN } from '../render/rackOps'
 import { rackNumbersNow } from './rackLines'
 import { lineNamer } from './lineNames'
+import { overlapMarks } from '../render/overlapOps'   // (lane-fixes 5)
 
 export { SHELF_UNIT_IN, SHELF_DEPTH_IN }
 const num = (v) => String(Math.round(v * 100) / 100)
@@ -36,3 +37,15 @@ export function unitCountChange(o, n, gridSize = 40) {
 }
 /** The change that makes it `depthIn` deep (inches). */
 export const depthChange = (depthIn, gridSize = 40) => ({ height: (depthIn / 12) * gridSize, shelfDepth: depthIn })
+
+/** (lane-fixes 5) Its usable units: a shelving run holds no pallet positions, so what a zone or another rack covers comes off
+ *  its units — each unit with a red X (render/overlapOps.js overlapMarks: the same marks the plan and the PDF draw) is one
+ *  unit off. → { units, lost, usable }. */
+export function shelvingUsable(objects, o, gridSize = 40) {
+  const { n } = shelvingUnits(o, gridSize)
+  if (!o || !Array.isArray(objects)) return { units: n, lost: 0, usable: n }
+  const seen = new Set()
+  for (const m of overlapMarks(objects, gridSize)) if (m.rackId === o.id) seen.add(`${Math.round(m.x * 100)},${Math.round(m.y * 100)}`)
+  const lost = Math.min(n, seen.size)
+  return { units: n, lost, usable: n - lost }
+}

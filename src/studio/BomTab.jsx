@@ -3,6 +3,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { useCanvasStore } from '../store/useCanvasStore'
 import { computeBom, bomCsv, bomGroups, byRowTable, qtyText, rowsText, partName, partShort, sizeWords, selectedGroup } from '../utils/bom'
 import { bomXlsx } from '../export/bomXlsx'
+import { laneTable } from '../racks/laneBom'   // (lane-fixes)
 import { useLayoutCheck } from '../utils/layoutCheck'
 import { rackFootprint } from '../generate/rackFootprint'
 import { colorOf } from '../utils/sectionAreas'
@@ -148,6 +149,47 @@ export function ByRowTable({ bom }) {
   )
 }
 
+/** (lane-fixes) Each lane rack section that is on (push-back), as the Tally shows it: its name and letter lines over Part |
+ *  Size | P1 … | Total — the same table the beam racks' By row is. Nothing for a layout with none. */
+export function LaneTables({ bom, wide = false }) {
+  const types = bom.types || []
+  if (!types.length) return null
+  const cell = { padding: wide ? '6px 8px' : '5px 6px', minWidth: 36, fontSize: 12, borderTop: `1px solid ${C.divider}`, fontFamily: MONO, color: C.text, textAlign: 'right', whiteSpace: 'nowrap' }
+  const head = { ...cell, borderTop: 'none', color: C.muted, fontSize: 11, fontFamily: 'inherit', fontWeight: 500 }
+  const sum = { ...cell, color: C.strong, fontWeight: 600, background: C.inset }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: wide ? 0 : '12px 0 4px' }}>
+      {types.map(t => {
+        const { cols, parts } = laneTable(t)
+        return (
+          <div key={t.id} data-lane-table={t.id} style={{ overflowX: 'auto' }}>
+            <table aria-label={`${t.name} by rack`} style={{ borderCollapse: 'collapse', minWidth: '100%' }}>
+              <thead>
+                <tr><th colSpan={cols.length + 3} style={{ ...head, textAlign: 'left', color: C.strong, fontSize: 12, fontWeight: 600, padding: '6px 10px', borderBottom: `1px solid ${C.separator}` }}>{t.name}<span style={{ color: C.muted, fontWeight: 500, marginLeft: 8 }}>{cols.join(', ')}</span></th></tr>
+                <tr>
+                  <th style={{ ...head, textAlign: 'left', padding: '5px 10px' }}>Part</th><th style={{ ...head, textAlign: 'left' }}>Size</th>
+                  {cols.map(c => <th key={c} style={head} data-lane-col={c}>{c}</th>)}
+                  <th style={{ ...head, color: C.strong }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {parts.map(p => (
+                  <tr key={p.key} data-lane-part={p.part}>
+                    <td style={{ ...cell, ...PART_CELL, padding: '5px 10px' }}>{partShort(p.part)}</td>
+                    <td style={{ ...cell, ...SIZE_CELL }}>{sizeWords(p.size) || '—'}</td>
+                    {cols.map(c => <td key={c} style={{ ...cell, color: p.cells[c] ? C.text : C.faint }}>{p.cells[c]}</td>)}
+                    <td data-grand-total style={sum}>{p.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 /** A card's parts: one line each — the part on one line, its quantity on the right (beams with their pairs). */
 function PartLines({ g, picked, onPick }) {
   if (!g.lines.length) return <span style={{ color: C.muted, fontSize: 12, padding: '0 12px 10px' }}>No racks</span>
@@ -190,9 +232,9 @@ export function BomTab() {
     <div role="tabpanel" aria-label="BOM" style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
       <Sec>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Btn kind="primary" style={small} onClick={openTally} disabled={!bom.lines.length}>Tally</Btn>
-          <Btn kind="inset" style={small} aria-label="Download xlsx" title="Download xlsx" onClick={xlsx} disabled={!bom.lines.length}>xlsx</Btn>
-          <Btn kind="inset" style={small} aria-label="Download CSV" title="Download CSV" onClick={csv} disabled={!bom.lines.length}>CSV</Btn>
+          <Btn kind="primary" style={small} onClick={openTally} disabled={!bom.lines.length && !(bom.types || []).length}>Tally</Btn>
+          <Btn kind="inset" style={small} aria-label="Download xlsx" title="Download xlsx" onClick={xlsx} disabled={!bom.lines.length && !(bom.types || []).length}>xlsx</Btn>
+          <Btn kind="inset" style={small} aria-label="Download CSV" title="Download CSV" onClick={csv} disabled={!bom.lines.length && !(bom.types || []).length}>CSV</Btn>
         </div>
         {bom.flags.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

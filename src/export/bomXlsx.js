@@ -4,6 +4,7 @@
 
 import { byRowTable, partShort, sizeWords } from '../utils/bom'
 import { writeXlsx, colName } from '../utils/xlsx'
+import { laneTable } from '../racks/laneBom'   // (lane-fixes)
 
 /** The sheet's rows (what writeXlsx gets, and what the tests read back): { rows, merges, widths, bold }. */
 export function bomXlsxSheet(bom, title = '') {
@@ -26,8 +27,20 @@ export function bomXlsxSheet(bom, title = '') {
     r.push(p.total)
     return r
   })
+  const rows = [head1, head2, head3, ...body], bold = new Set([0, 1, 2])
+  // (lane-fixes) each lane rack section that is on (push-back), under the beam racks' table, as the BOM tab and CSV have
+  // it: a blank row, its name over its letter lines, Part · Size · P1 … · Total, its parts
+  for (const t of bom.types || []) {
+    const { cols, parts: lp } = laneTable(t)
+    rows.push([])
+    bold.add(rows.length); rows.push([t.name + ' · ' + cols.join(', ')])
+    bold.add(rows.length); rows.push(['Part', 'Size', ...cols, 'Total'])
+    for (const p of lp) rows.push([partShort(p.part), sizeWords(p.size), ...cols.map(c => p.cells[c]), p.total])
+  }
+  // the beam table's widths as they were; a lane section wider than it: 7 more each
   const widths = [18, 20, ...head3.slice(2).map(h => Math.max(7, String(h).length + 2))]
-  return { rows: [head1, head2, head3, ...body], merges, widths, bold: new Set([0, 1, 2]) }
+  while (widths.length < Math.max(...rows.map(r => r.length))) widths.push(7)
+  return { rows, merges, widths, bold }
 }
 
 /** The file's bytes. */
