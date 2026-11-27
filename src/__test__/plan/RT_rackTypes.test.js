@@ -21,8 +21,8 @@ describe('RT — the rack type registry', () => {
   })
 
   it('RT-names: each place’s names exactly as before the registry', () => {
-    expect(namesFor('card')).toEqual({ rack_row: 'Selective', rack_double_row: 'Back-to-back', rack_drive_in: 'Drive-in', rack_drive_through: 'Drive-through', rack_pushback: 'Pushback', rack_pallet_flow: 'Pallet flow', rack_cantilever: 'Cantilever' })
-    expect(namesFor('check')).toEqual({ rack_row: 'Single row', rack_double_row: 'Double row', rack_cantilever: 'Cantilever rack', rack_drive_in: 'Drive-in rack', rack_drive_through: 'Drive-through rack', rack_pushback: 'Pushback rack', rack_pallet_flow: 'Pallet flow rack', rack_mezzanine: 'Mezzanine', rack_shelving: 'Shelving unit' })
+    expect(namesFor('card')).toEqual({ rack_row: 'Selective', rack_double_row: 'Back-to-back', rack_drive_in: 'Drive-in', rack_drive_through: 'Drive-through', rack_pushback: 'Pushback', rack_pallet_flow: 'Pallet flow', rack_cantilever: 'Cantilever', rack_carton_flow: 'Carton flow' })   // (r8-carton-flow) a new type, new names
+    expect(namesFor('check')).toEqual({ rack_row: 'Single row', rack_double_row: 'Double row', rack_cantilever: 'Cantilever rack', rack_drive_in: 'Drive-in rack', rack_drive_through: 'Drive-through rack', rack_pushback: 'Pushback rack', rack_pallet_flow: 'Pallet flow rack', rack_mezzanine: 'Mezzanine', rack_shelving: 'Shelving unit', rack_carton_flow: 'Carton flow rack' })
     expect(namesFor('generate')).toEqual({ rack_row: 'Rack Row', rack_double_row: 'Double Row', rack_drive_in: 'Drive-In Rack', rack_drive_through: 'Drive-Through Rack', rack_pushback: 'Push-Back Rack', rack_pallet_flow: 'Pallet-Flow Rack' })
   })
 

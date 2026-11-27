@@ -165,6 +165,7 @@ describe('rackOps — dispatch and level of detail', () => {
       'rack_row', 'rack_double_row', 'rack_drive_in', 'rack_drive_through',
       'rack_pushback', 'rack_pallet_flow', 'rack_cantilever',
       'rack_mezzanine', 'rack_shelving',
+      'rack_carton_flow',   // (r8-carton-flow) a tenth type
     ]
     for (const t of LIBRARY) {
       expect(PORTED_RACK_TYPES.has(t), `${t} is not ported`).toBe(true)

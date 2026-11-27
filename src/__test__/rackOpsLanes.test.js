@@ -151,7 +151,7 @@ describe('rackOps — push-back and pallet flow', () => {
   })
 
   it('names its faces in one table (LANE_FACES), which the builders draw from', () => {
-    expect(Object.keys(LANE_FACES).sort()).toEqual(['rack_drive_in', 'rack_drive_through', 'rack_pallet_flow', 'rack_pushback'])
+    expect(Object.keys(LANE_FACES).sort()).toEqual(['rack_carton_flow', 'rack_drive_in', 'rack_drive_through', 'rack_pallet_flow', 'rack_pushback'])   // (r8-carton-flow) + carton flow: LOAD / PICK
   })
 })
 
