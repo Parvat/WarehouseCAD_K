@@ -160,3 +160,17 @@ describe('(lane-fixes 8) pdf-parity: the PDF prints what the plan draws', () => 
     expect(s.svg).toContain(`stroke="#7c3aed" stroke-width="${1.5 * s.px}"`)                   // the zone's 1.5 px edge
   })
 })
+
+describe('(lane-fixes 5) shelving: the face X marks count too, with the plan\'s truck', () => {
+  it('a zone across the run blocking both pick faces: every unit has an X — 0 of 3 usable; without a profile only the covered one', async () => {
+    const { MHE_PROFILES } = await import('../../generate/columnCheck')
+    const sh = { id: 's', type: 'rack_shelving', x: 0, y: 0, width: 480, height: 80, rotation: 0 }
+    const z = { id: 'z', type: 'zone_office', x: 0, y: -40, width: 100, height: 200 }
+    const { faceLostMarks } = await import('../../generate/coverLost')
+    const marks = faceLostMarks([sh, z], { gridSize: GS, profile: MHE_PROFILES.reach }).filter(m => m.rackId === 's').length
+    const u = shelvingUsable([sh, z], sh, GS, MHE_PROFILES.reach)
+    expect(marks).toBeGreaterThan(0)
+    expect(u).toEqual({ units: 3, lost: 3, usable: 0 })                               // as the plan draws: an X on every unit
+    expect(shelvingUsable([sh, z], sh, GS).lost).toBe(1)
+  })
+})

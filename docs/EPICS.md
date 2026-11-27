@@ -17,11 +17,16 @@ Platform (PL1–PL5) after its open questions are answered (FEATURES.md, Platfor
 
 ## Status
 
-- **R3 / R4 (lane racks) — built on branch holiday-run, awaiting PP** (2026-11-26 holiday run; reports r3-drive-in, r4-push-back,
+- **Lane rack BOMs need dealer details before they are switched on** (PP 2026-11-27): drive-in, drive-through and pallet
+  flow — part names, frame spacing, ties, guides and brakes differ per dealer. Collect them, then turn on
+  `LANE_BOMS_PENDING_ON` in `racks/laneBom.js` (one setting; the formulas are kept and tested) and check each part against
+  the dealer's sheet. Push-back's BOM is on (beams lanes × levels × frame lines, 2 anchors per post — lane-fixes).
+- **Parked (PP 2026-11-27, not to build yet):** a rack-type choice in Generate, together with Generate option B — its own spec.
+- **R3 / R4 (lane racks) — built, merged 2026-11-27 (holiday-run, master 7405881); PP's answers built on lane-fixes** (2026-11-26 holiday run; reports r3-drive-in, r4-push-back,
   r5-pallet-flow): one lane-rack engine (`racks/laneEngine.js`) for drive-in, drive-through, push-back and pallet flow —
   card, handles in whole lanes / stations, placement defaults, levels on the rack (the R1 levels bug fixed for new racks),
-  a BOM section per type. **Not built:** Fill / Generate blocks of lanes (Generate has no rack-type choice — a question for
-  PP), elevations of lane racks, carton flow. The holiday prompt numbered push-back R4 and pallet flow R5; in this plan both
+  a BOM section per type. **Not built:** Fill / Generate blocks of lanes (Generate has no rack-type choice — parked by PP with
+  Generate option B), elevations of lane racks, carton flow. The holiday prompt numbered push-back R4 and pallet flow R5; in this plan both
   are R4. **R5 (cantilever + shelving)** is not started beyond rack-round3 (shelving sizes) and rack-xmarks.
 - **R1 — done** (branch r1-rack-registry): `utils/rackTypes.js` replaces 31 local beam-rack lists and 4 name tables;
   REG-rack-types-same (recorded on master d9f6984) and RT_rackTypes. Audit findings carried forward: lane racks count

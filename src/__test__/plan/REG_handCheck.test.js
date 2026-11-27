@@ -9894,8 +9894,9 @@ describe('REG — the hand check by real clicks', () => {
       // the plan and the PDF: the dashed line between front and rear positions, one per bay
       const deepOps = () => L.S('return import("/src/render/rackOps.js").then(M => { const op = (M.rackDrawOps(S.getState().objects.find(o => o.id === arg), { gridSize: S.getState().gridSize || 40 }) || []).find(x => x.name === "deep-line"); return op ? { n: (op.d.match(/M/g) || []).length, dash: !!op.dash } : null })', id)
       expect(await deepOps()).toEqual({ n: o.beams.length, dash: true })
-      const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }).svg)')
-      expect(/stroke-dasharray="4,3"|stroke-dasharray="4 3"/.test(svg)).toBe(true)
+      // (lane-fixes 8, pdf-parity) the 4 · 3 screen px dash prints at 0.25 mm a px — the sheet's `px` world units a px
+      const sheet = await L.S('return import("/src/export/pdfExport.js").then(M => { const r = M.buildLayoutSVG(S.getState().objects, S.getState().layers, S.getState().gridSize || 40, { title: "t", elevations: S.getState().elevations }); return { svg: r.svg, px: r.px } })')
+      expect(sheet.svg.includes(`stroke-dasharray="${4 * sheet.px} ${3 * sheet.px}"`)).toBe(true)
       // Check: a reach truck (the project's) reaches only its first pallet
       const deepWarn = () => L.S('return import("/src/utils/layoutCheck.js").then(M => M.checkLayout(S.getState().objects, { gridSize: S.getState().gridSize || 40, elevations: S.getState().elevations }).warnings.filter(w => w.kind === "deep-reach" && w.ids.includes(arg)).map(w => w.text))', id)
       expect((await deepWarn())[0]).toMatch(/2 deep — needs a deep-reach truck/)
@@ -10665,8 +10666,9 @@ describe('REG — the hand check by real clicks', () => {
       const slot = await L.page.evaluate((id) => { const st = window.Konva.stages[0]; st.draw(); const s = st.findOne(n => n.name() === 'rack-slots' && n.findAncestor(a => a.name() === 'obj:' + id)); return s ? s.opacity() : null }, r.id)
       expect(slot).toBeCloseTo(0.55, 6)
       // the PDF: the same
-      const svg = await L.S('return import("/src/export/pdfExport.js").then(M => M.buildLayoutSVG(S.getState().objects, S.getState().layers, 40).svg)')
-      expect(svg).toMatch(/stroke-width="0\.75" stroke-dasharray="2,3" opacity="0\.55"/)
+      // (lane-fixes 8, pdf-parity) 0.75 px, dash 2 · 3 px, at 0.25 mm a px on the sheet (its `px` world units a px)
+      const sheet = await L.S('return import("/src/export/pdfExport.js").then(M => { const r = M.buildLayoutSVG(S.getState().objects, S.getState().layers, 40); return { svg: r.svg, px: r.px } })')
+      expect(sheet.svg).toContain(`stroke-width="${0.75 * sheet.px}" stroke-dasharray="${2 * sheet.px} ${3 * sheet.px}" opacity="0.55"`)
     }, T)
 
     /* ── REG-basics: Tab then drag (rack-fixes 3) ── */
@@ -11583,7 +11585,7 @@ describe('REG — the hand check by real clicks', () => {
       expect((await lnObj('lane-1')).firstIn).toBe(saved)
     }, 2 * T)
 
-    onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit, then a click on the run: 2 of 3, one red X', async () => {
+    onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit (inside the run, both pick faces open), then a click on the run: 2 of 3, one red X', async () => {
       const B = await import('./handCheck/browser.js')
       L = await B.openLayout(app, B.fixture('older-horizontal'))
       const fp = await fpOf()
@@ -11592,9 +11594,9 @@ describe('REG — the hand check by real clicks', () => {
       const sh = await lnObj('sh-lf')
       await lnView(sh, 0.6); await lnSelect(sh)
       expect(await lnCard().locator('[data-shelving-usable]').innerText()).toBe('3 of 3 units usable')
-      await L.S('const st = S.getState(), z = st.objects.find(o => /^zone_/.test(o.type)), lay = z ? z.layerId : st.objects.find(o => /^rack_/.test(o.type)).layerId; S.setState({ objects: [...st.objects, { id: "z-lf", type: "zone_office", x: arg.x, y: arg.y - 40, width: 100, height: 200, rotation: 0, layerId: lay }] })', { x, y })
+      await L.S('const st = S.getState(), z = st.objects.find(o => /^zone_/.test(o.type)), lay = z ? z.layerId : st.objects.find(o => /^rack_/.test(o.type)).layerId; S.setState({ objects: [...st.objects, { id: "z-lf", type: "zone_office", x: arg.x, y: arg.y, width: 100, height: 80, rotation: 0, layerId: lay }] })', { x, y })
       await lnSelect({ ...sh, x: sh.x + 300, width: 100 })
-      expect(await lnCard().locator('[data-shelving-usable]').innerText()).toBe('2 of 3 units usable · 1 covered')
+      expect(await lnCard().locator('[data-shelving-usable]').innerText()).toBe('2 of 3 units usable · 1 lost')
       expect(await L.page.evaluate(() => { const g = window.Konva.stages[0].findOne('.rack-overlap'); return g ? g.find('Line').length / 2 : 0 })).toBe(1)
     }, 2 * T)
 

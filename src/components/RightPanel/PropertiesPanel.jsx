@@ -16,6 +16,7 @@ import { Swatch } from '../../studio/Swatch'
 import { SizeInput } from '../../studio/textSizeCard'
 import { shelvingLabel, shelvingTag, shelvesOf, isStandard, SHELF_UNIT_IN, SHELF_DEPTH_IN, unitWidthChange, unitCountChange, depthChange, shelvingUsable } from '../../utils/shelving'   // (rack-round3 6)
 import { shelvingUnits } from '../../render/rackOps'
+import { useColumnCheck } from '../../generate/useColumnCheck'   // (lane-fixes 5)
 import { LaneCard } from '../../studio/LaneCard'   // (r3-drive-in)
 import { laneEngineOn } from '../../racks/laneEngine'
 import { nanoid as newIdForZone } from 'nanoid'
@@ -659,8 +660,8 @@ function ShelvingFields({ obj, gridSize }) {
   const set = (u) => useCanvasStore.getState().commitObjectUpdate(obj.id, u)
   const { n, unitIn, depthIn } = shelvingUnits(obj, gridSize)
   // (lane-fixes 5) the units a zone or a rack covers (a red X each) come off usable
-  const objects = useCanvasStore(s => s.objects)
-  const use = shelvingUsable(objects, obj, gridSize)
+  const objects = useCanvasStore(s => s.objects), { profile } = useColumnCheck()   // the plan's truck: its face X marks too
+  const use = shelvingUsable(objects, obj, gridSize, profile)
   const tag = (v, list) => (isStandard(v, list) ? null : <span data-custom-size style={{ fontSize: 11, color: C.faint, marginLeft: 6 }}>Custom</span>)
   return (
     <div data-shelving-fields style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -677,7 +678,7 @@ function ShelvingFields({ obj, gridSize }) {
         </Field>
       </Grid2>
       <div data-shelving-usable={use.usable} style={{ fontSize: 12, color: use.lost ? C.text : C.muted }}>
-        {`${use.usable} of ${use.units} unit${use.units === 1 ? '' : 's'} usable`}{use.lost ? ` · ${use.lost} covered` : ''}
+        {`${use.usable} of ${use.units} unit${use.units === 1 ? '' : 's'} usable`}{use.lost ? ` · ${use.lost} lost` : ''}
       </div>
     </div>
   )

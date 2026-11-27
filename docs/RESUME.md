@@ -21,7 +21,25 @@ Paused 2026-11-19. Master is tagged **`demo-2026-11`**.
 4. **Remove racks on lane racks** (drive-in, drive-through, push-back, pallet flow) removes only the covered lanes, like
    covered bays on a beam rack; the whole rack only when no lane is left. One undo. (Item 3.)
 
-**Holiday run (2026-11-26, branch holiday-run, not merged):** rack-xmarks, r3-drive-in, r4-push-back, r5-pallet-flow (one
+**PP's answers to the holiday run's questions (2026-11-27), built on branch lane-fixes:**
+1. **Lane BOM formulas:** drive-in, drive-through and pallet-flow BOMs are **off** until the dealer details are collected
+   (each dealer's setup differs: part names, frame spacing, ties, guides, brakes). Push-back: beams fixed (lanes × levels
+   × frame lines) and anchors added (2 per post); the rest approved.
+2. **Generate rack-type choice:** later, its own spec together with Generate option B. Not built.
+3. **xlsx and Tally:** yes, for every BOM section that is on (push-back today).
+4. **Old drive-ins with floor guides on:** no longer relevant — the drive-in BOM is off.
+5. **Push-back first level:** first beam at 8 in with rails on it — the bottom level is push-back too (new racks; a saved
+   rack keeps its value).
+6. **Pallet flow pitch:** 3/8 in per ft is right; card only, never printed.
+7. **Shelving under a zone or a rack:** covered units come off usable.
+8. **Beam numbers at a wall:** outside the wall.
+9. **Zoom p95 53 ms (CPU slowed 4×):** accepted. Do not cache racks as an image.
+10. **Older customer files:** PP will add some later. Nothing to do now.
+
+**lane-fixes (2026-11-27, branch, from master 7405881):** those answers (items 0–7) and pdf-parity (item 8: the PDF prints
+the rack numbers, and screen-pixel line weights at 0.25 mm a px). Report: [reports/lane-fixes.md](reports/lane-fixes.md).
+
+**Holiday run (2026-11-26, branch holiday-run, merged 2026-11-27 — master 7405881):** rack-xmarks, r3-drive-in, r4-push-back, r5-pallet-flow (one
 lane-rack engine for drive-in, drive-through, push-back, pallet flow: card, handles, BOM sections), basics-all (every
 library section of REG-basics strict), old-files (every saved file stable across save and reload), text-and-overlap (an
 overlap scan, the demo's R6 off a column). Reports in docs/reports/; questions for PP in each.
@@ -55,8 +73,12 @@ CLAUDE.md (the rules) and STUDIO.md (the chrome spec).
 
 ## Known gaps
 
-- **Lane-rack positions:** lanes × deep × levels since lane-positions; on holiday-run a lane rack placed or edited carries
-  its own levels (`levelsOwn`), a rack saved before still takes its elevation type's.
+- **Lane-rack positions:** lanes × deep × levels since lane-positions; a lane rack placed or edited carries its own levels
+  (`levelsOwn`), a rack saved before still takes its elevation type's.
+- **Lane-rack BOMs:** drive-in, drive-through and pallet flow are listed under "not in this BOM" until the dealer details
+  are in (`racks/laneBom.js` LANE_BOMS_PENDING_ON, off; the formulas are kept). Push-back has its section.
+- **Shelving usable** is a unit count on the shelving card ("2 of 3 units usable · 1 covered"); shelving holds no pallet
+  positions, so the layout's positions and usable are unchanged by it.
 - **Fill does not dodge columns with its frames.** In a 25′ grid, a section filled from the wall can put an upright frame on a column. Check flags it as an error and Generate does not do it. The demo's section split was moved to avoid one.
 - **Drawing tools that draw nothing yet:**
   - Arc and Arrow are held out of the Line tools menu and the A key; D2 or later.
@@ -135,7 +157,10 @@ files, tests and walkthrough are in EPICS.md.
 ### Polish list
 
 One line each, with where it shows. From the drawing-tools dealer audit (d1-fixes, older-horizontal and crowded-vertical, 10 %):
-- The text card's Color swatches: the dark colours are almost invisible on the dark card (no ring or border).
+- ~~The text card's Color swatches: the dark colours are almost invisible on the dark card~~ — done (studio/Swatch.jsx: a
+  very dark colour gets a ring in the colours popover and the card swatch has its border; checked in lane-fixes).
+- (lane-fixes) The three below are not look-only: the Draw icon needs a design icon, the other two change what a click
+  does. Left for PP.
 - The Draw rail button uses the Blocks glyph — Icons.dc.html has no Draw icon yet (needs a design icon; never hand-drawn).
 - A selected polyline's corner squares sit on top of the box handles where a corner is a box corner; there the corner drag wins (the other box handles still scale).
 - The floating selection bar can cover a neighbouring shape; a click there lands on the bar.
