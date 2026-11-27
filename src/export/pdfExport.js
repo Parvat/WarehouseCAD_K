@@ -77,14 +77,22 @@ import { isShown, layerShown } from '../utils/layers'
 import { isDrawn, drawnGeom, drawnSVG, textSVG } from '../render/drawnShapes'
 import { getObjectBounds } from '../utils/canvas'
 import { onTop } from '../utils/stacking'   // (stacking)
+import { placeRowLabels, rowLabelFs, rowReach } from '../canvas2/rowLabelPlace'   // (lane-fixes 8) the rack numbers, as the plan places them
+import { rackNumbersNow } from '../utils/rackLines'
+import { lineNamer, lineSections, chipText } from '../utils/lineNames'
+import { RACK_NUMBER } from '../render/rackFamily'
+import { useViewPrefs } from '../studio/viewPrefs'
+import { gridBuilding } from '../utils/columnGrid'
 
 /* (basics-fixes) An object with no symbol of its own (the Ops and Safety items, a column / pillar, a partition wall, a
    window): its box, filled and edged as on the canvas, turned with it, its name in the middle when it fits — the canvas's
    FallbackShape, on paper. */
 const otherName = (t) => String(t || '').replace(/^(mhe|util|safety|struct|annot|fp|rack|ops)_/, '').replace(/_/g, ' ')
 const xmlEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-export function otherSVG(o) {
-  if (o.type === 'circle' && Number.isFinite(o.cx)) return `<circle data-other="${o.type}" cx="${o.cx}" cy="${o.cy}" r="${o.r || 10}" fill="${o.noFill ? 'none' : (o.fill || 'none')}" stroke="${o.stroke || '#6B7280'}" stroke-width="${(o.strokeWidth || 1.5) * 0.5}"/>`
+/* (lane-fixes 8, pdf-parity) `px`: world units per screen px on paper — the canvas draws this edge in SCREEN px, and on
+   paper 1 px = 0.25 mm (the drawn shapes' rule); without it the old 0.5 world units per px. */
+export function otherSVG(o, px = 0.5) {
+  if (o.type === 'circle' && Number.isFinite(o.cx)) return `<circle data-other="${o.type}" cx="${o.cx}" cy="${o.cy}" r="${o.r || 10}" fill="${o.noFill ? 'none' : (o.fill || 'none')}" stroke="${o.stroke || '#6B7280'}" stroke-width="${(o.strokeWidth || 1.5) * px}"/>`
   const b = getObjectBounds(o)
   if (!b || !(b.width > 0) || !(b.height > 0)) return ''
   const cx = b.x + b.width / 2, cy = b.y + b.height / 2
@@ -92,7 +100,7 @@ export function otherSVG(o) {
   const fill = o.noFill ? 'none' : (o.fill || 'none'), stroke = o.stroke || '#6B7280'
   const fs = Math.min(11, b.height * 0.5), name = otherName(o.type)
   const words = b.width > 24 && b.height > 12 ? `<text x="${cx}" y="${cy + fs * 0.35}" font-size="${fs}" font-family="sans-serif" fill="${stroke}" fill-opacity="0.75" text-anchor="middle">${xmlEsc(name)}</text>` : ''
-  return `<g data-other="${o.type}"${turn} opacity="${o.opacity ?? 1}"><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="${fill}" stroke="${stroke}" stroke-width="${(o.strokeWidth || 1.5) * 0.5}"/>${words}</g>`
+  return `<g data-other="${o.type}"${turn} opacity="${o.opacity ?? 1}"><rect x="${b.x}" y="${b.y}" width="${b.width}" height="${b.height}" fill="${fill}" stroke="${stroke}" stroke-width="${(o.strokeWidth || 1.5) * px}"/>${words}</g>`
 }
 
 const FP_TYPES = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
@@ -201,14 +209,14 @@ function buildingDimsSVG(obj, gridSize, lz, objects = []) {
    in drawing units), from the same expandColumnGrid the check measures. */
 /* ── Zone — canvas2's ZoneShape (shapes.jsx): its colour as a light tint and
    a 1.5-unit outline, its name centred, drawing-size text sized to the zone. */
-function zoneSVG(obj, gridSize) {
+function zoneSVG(obj, gridSize, px = null) {
   if (!(obj.width > 0) || !(obj.height > 0)) return ''
   const stroke = /^#[0-9a-f]{6}$/i.test(obj.stroke || '') ? obj.stroke : '#64748b'
   // (CLAUDE.md Rule 8 — the CAD text model) its name at the zone names' real height (utils/textSizes.js 'names', its own if set)
   const fs = textHeight('names', gridSize, obj.labelSizeIn)
   const name = esc(obj.label || 'Zone')
   return `<g data-zone="${esc(obj.id || '')}">` +
-    `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${stroke}" fill-opacity="0.13" stroke="${stroke}" stroke-width="${gridSize * 0.0375}"/>` +
+    `<rect x="${obj.x}" y="${obj.y}" width="${obj.width}" height="${obj.height}" fill="${stroke}" fill-opacity="0.13" stroke="${stroke}" stroke-width="${px ? 1.5 * px : gridSize * 0.0375}"/>` +   // (pdf-parity) the canvas's 1.5 screen px
     `<text x="${obj.x + obj.width / 2}" y="${obj.y + obj.height / 2}" text-anchor="middle" dominant-baseline="central" font-family="sans-serif" font-weight="600" font-size="${fs}" fill="${stroke}">${name}</text></g>`
 }
 
@@ -236,9 +244,37 @@ function sectionKeySVG(objects, gridSize, lz) {
     '</g>').join('')
 }
 
+/* ── (lane-fixes 8, pdf-parity) The rack numbers — R1, R2–R3, D1, S1 … — where the plan draws them (canvas2/rowLabelPlace.js:
+   the same places, worked out once in drawing units), at their real height (Rule 8): plain in the rack numbers' colour, or
+   Per section a chip in the section's colour. Shown as on the plan: the Racking layer on and the View card's Row numbers. */
+export function rowNumberPlaces(objects, gridSize, elevations = null, { layerMap = null } = {}) {
+  if (layerMap && !layerShown(layerMap, 'racking')) return []
+  try { if (!useViewPrefs.getState().rowLabels) return [] } catch { /* outside the app: shown */ }
+  const lines = rackNumbersNow(objects, gridSize)
+  if (!lines.length) return []
+  const fs = rowLabelFs(textLz('row', gridSize))
+  return placeRowLabels(lines, fs, aisleLabelBoxes(objects, gridSize, useLabelPrefs.getState().labelSize), lineNamer(objects, elevations, gridSize), objects, gridSize).map(p => ({ ...p, fs }))
+}
+export function rowNumbersSVG(places, objects, gridSize, elevations = null) {
+  if (!places.length) return ''
+  const secOf = lineSections(objects, elevations, gridSize)
+  const font = `font-family="'Plus Jakarta Sans', sans-serif"`
+  return '<g data-rack-numbers="1">' + places.map(p => {
+    const fs = p.fs, my = p.y + p.h / 2, col = secOf ? secOf.get(p.nos[0])?.color : null
+    if (!col) {
+      const x = p.align === 'right' ? p.x + p.w : p.x + p.w / 2
+      return `<text data-rack-number="${esc(p.text)}" x="${x}" y="${my}" font-size="${fs}" ${font} fill="${RACK_NUMBER}" text-anchor="${p.align === 'right' ? 'end' : 'middle'}" dominant-baseline="central">${esc(p.text)}</text>`
+    }
+    // a chip (Per section): as RackLineLabels draws it
+    const tw = p.text.length * fs * 0.62 + fs * 0.5, cx = (p.align === 'right' ? p.x + p.w - tw : p.x + p.w / 2 - tw / 2) + tw / 2
+    return `<rect x="${cx - tw / 2}" y="${my - p.h / 2}" width="${tw}" height="${p.h}" rx="${fs * 0.25}" fill="${col}"/>` +
+      `<text data-rack-number="${esc(p.text)}" x="${cx}" y="${my}" font-size="${fs}" ${font} font-weight="600" fill="${chipText(col)}" text-anchor="middle" dominant-baseline="central">${esc(p.text)}</text>`
+  }).join('') + '</g>'
+}
+
 /* ── A column grid's gridlines, bubbles and dimension chains (render/columnAnnot.js) — always on the PDF (col-grid). */
-function columnAnnotSVG(obj, gridSize, objects, lz) {
-  const a = columnAnnot(obj, objects, gridSize, lz)
+function columnAnnotSVG(obj, gridSize, objects, lz, clear = null) {
+  const a = columnAnnot(obj, objects, gridSize, lz, clear)
   if (!a) return ''
   const sw = a.u, ln = (l) => `<line x1="${l[0]}" y1="${l[1]}" x2="${l[2]}" y2="${l[3]}" stroke="${ANNOT.ink}" stroke-width="${sw}"/>`
   const font = `font-family="'Plus Jakarta Sans', sans-serif" font-weight="600"`
@@ -265,8 +301,14 @@ function columnGridSVG(obj, gridSize, objects = null) {
    component (shapes.jsx) paints with Konva — ported to markup instead of
    canvas calls, not reinvented. `lz` is the sheet's label scale: the travel
    arrows are drawing size, like the labels. */
-function opToSVG(o, lz) {
+function opToSVG(o, lz, px = 1) {
   void lz   // (rack-design) a rack's arrows and words are real sizes, not the label size
+  /* (lane-fixes 8, pdf-parity) the canvas draws these edges, hairlines and slot dashes in SCREEN px (strokeScaleEnabled off):
+     on paper 1 px = 0.25 mm (`px` world units), as the drawn shapes print — they printed px as world units, a third as heavy */
+  if (px !== 1 && (o.op === 'rect' || o.op === 'path' || o.op === 'lines' || o.op === 'slots')) {
+    const dash = o.dash == null ? o.dash : (Array.isArray(o.dash) ? o.dash : String(o.dash).split(/[ ,]+/).map(Number)).map(v => v * px).join(' ')
+    o = { ...o, strokeWidth: (o.strokeWidth ?? 1) * px, ...(o.dash != null ? { dash } : null) }
+  }
   if (o.op === 'rect') {
     return `<rect x="${o.x}" y="${o.y}" width="${o.w}" height="${o.h}" ` +
       `fill="${o.fill || 'none'}" stroke="${o.stroke || 'none'}" stroke-width="${o.strokeWidth ?? 1}" ` +
@@ -389,11 +431,11 @@ export function labelsSVG(objects, gridSize, opts) {
       for (const c of narrowAisleBlocks(objects, { profile: opts.profile, gridSize, already: blockedKeys(res), elevations: opts.elevations })) ops.push(...blockedFaceOps(c, byId.get(c.rackId), gridSize, lz))
       for (const o of racks) if ((o.type === 'rack_row' || o.type === 'rack_double_row') && Array.isArray(o.beams) && o.beams.length) ops.push(...oversizedOps(o, gridSize, lz))
       // (rack-fixes 1) two racks overlapping, one not a beam rack: the red X on each covered position, as on screen
-      ops.push(...overlapOps(overlapMarks(objects, gridSize), 1.5 / lz))
+      ops.push(...overlapOps(overlapMarks(objects, gridSize), opts.px ? 1.5 * opts.px : 1.5 / lz))   // (pdf-parity) the canvas's 1.5 screen px
       // (rack-round2 1) a short face of a rack that is not a beam rack: red on it, and its aisle chip, as on screen
       { const faces = laneFaceGaps(objects, { gridSize, profile: opts.profile || undefined, walkwayIn: walkwayInNow() }), solids = chipSolids(objects, gridSize)
         // (rack-round3 4) the lost positions' red X (no line on the face), the chip red
-        ops.push(...overlapOps(faceLostMarks(objects, { gridSize, profile: opts.profile || undefined, faces }), 1.5 / lz))
+        ops.push(...overlapOps(faceLostMarks(objects, { gridSize, profile: opts.profile || undefined, faces }), opts.px ? 1.5 * opts.px : 1.5 / lz))
         for (const g of faces) ops.push(...aisleLabelOps({ ...g, level: 1 }, textLz('aisle', gridSize), { solids })) }
     }
   }
@@ -412,7 +454,7 @@ export function labelsSVG(objects, gridSize, opts) {
    here as an SVG transform around the object's own centre, the same pivot
    canvas2/shapes.jsx's spin() uses, so a turned rack prints exactly as it
    sits on screen. */
-function rackSVG(obj, gridSize, lz, elev = null) {
+function rackSVG(obj, gridSize, lz, elev = null, px = 1) {
   const ops = rackDrawOps(obj, { gridSize })
   if (!ops) return ''
   const rot = obj.rotation || 0
@@ -420,7 +462,7 @@ function rackSVG(obj, gridSize, lz, elev = null) {
   const transform = rot ? ` transform="rotate(${rot} ${cx} ${cy})"` : ''
   // each bay band in its elevation type's colour, as on the canvas, when the colours are shown (utils/elevationDraw.js)
   const fills = elev ? bandRects(obj, elev, gridSize).map(r => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${esc(r.color)}" fill-opacity="${ELEV_FILL_OPACITY}"/>`).join('') : ''
-  return `<g${transform}>${ops.map(o => opToSVG(o, lz)).join('')}${fills}</g>`
+  return `<g${transform}>${ops.map(o => opToSVG(o, lz, px)).join('')}${fills}</g>`
 }
 
 /* ── Scale bar — the tick SPACING is drawn in the same world-unit coordinate
@@ -520,13 +562,18 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const keyLz = labelScale(prefs.labelSize, gridSize), namesLz = textLz('names', gridSize), keys = sectionLegend(objects.filter(usable), gridSize, namesLz)
   const colLz = (o) => textLz('column', gridSize, o.labelSizeIn), bldLz = (o) => textLz('building', gridSize, o.labelSizeIn)
   void keyLz
+  // (lane-fixes 8) the rack numbers, where the plan draws them (some sit outside a wall); the column chain and bubbles
+  // step out past them, as on the plan (ColumnGridAnnot rowClear)
+  // (worked out from the objects printed: a hidden layer prints exactly as the layout without its objects — LY-hidden)
+  const rowPlaces = rowNumberPlaces(objects.filter(usable), gridSize, elevations, { layerMap })
+  const colClear = (g) => { const fp = gridBuilding(objects, g); if (!fp || !rowPlaces.length) return null; const r = rowReach(fp, rowPlaces); return { top: r.top, left: r.left } }
   // and the column grids' bubbles and chains (outside the building, top and left — col-grid round)
-  const annBoxes = objects.filter(usable).filter(o => o.type === 'column_grid' && o.showGrid !== false).map(o => columnAnnot(o, objects.filter(usable), gridSize, colLz(o))).filter(Boolean)
+  const annBoxes = objects.filter(usable).filter(o => o.type === 'column_grid' && o.showGrid !== false).map(o => columnAnnot(o, objects.filter(usable), gridSize, colLz(o), colClear(o))).filter(Boolean)
     .flatMap(a => a.bubbles.map(b => ({ x: b.x - b.r, y: b.y - b.r, w: b.r * 2, h: b.r * 2 })))
   const dimBoxes = objects.filter(usable).filter(o => FP_TYPES.has(o.type)).flatMap(o => buildingDims(o, gridSize, bldLz(o))).map(d => d.box)
   // and the doors' chains outside the walls (doors-edit)
   const doorBoxes = doorDrawing(objects.filter(usable), gridSize, textLz('doorValue', gridSize), { badgeU: 1 / textLz('doorBadge', gridSize) }).labels.map(l => l.box)
-  const extra = [...keys, ...annBoxes, ...dimBoxes, ...doorBoxes]
+  const extra = [...keys, ...annBoxes, ...dimBoxes, ...doorBoxes, ...rowPlaces.map(p => ({ x: p.x, y: p.y, w: p.w, h: p.h }))]
   const bounds = bounds0 && extra.length
     ? (() => { const x0 = Math.min(bounds0.x, ...extra.map(k => k.x)), y0 = Math.min(bounds0.y, ...extra.map(k => k.y)), x1 = Math.max(bounds0.x + bounds0.width, ...extra.map(k => k.x + k.w)), y1 = Math.max(bounds0.y + bounds0.height, ...extra.map(k => k.y + k.h)); return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 } })()
     : bounds0 || { x: 0, y: 0, width: gridSize * 40, height: gridSize * 30 }
@@ -564,6 +611,9 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   }
   const lz = labelScale(labelOpts.labelSize, gridSize)
   const u = 1 / mmPerUnitPaper // world units per PAPER mm — sizes the print furniture below
+  // (lane-fixes 8, pdf-parity) what the canvas draws in SCREEN px prints at 0.25 mm a px (the drawn shapes' rule)
+  const PX = 0.25 * u
+  labelOpts.px = PX
   const scaleRatio = Math.round(mmPerWorldPx(gridSize) / mmPerUnitPaper)
 
   // Draw order matches the canvas: floor plans first (the ground), then racks,
@@ -608,18 +658,19 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
     ...floors.map(o => buildingDimsSVG(o, gridSize, bldLz(o), objects.filter(usable))),
     // the sections under everything else, as on the plan
     ...sections.map(o => sectionSVG(o, u, objects.filter(isDoor), gridSize)),
-    ...zones.map(o => zoneSVG(o, gridSize)),
+    ...zones.map(o => zoneSVG(o, gridSize, PX)),
     doorsSVG(objects.filter(usable), gridSize, null),
-    ...others.filter(o => !onTop(o)).map(o => otherSVG(o)),
-    ...racks.map(o => rackSVG(o, gridSize, lz, elevTable)),
+    ...others.filter(o => !onTop(o)).map(o => otherSVG(o, PX)),
+    ...racks.map(o => rackSVG(o, gridSize, lz, elevTable, PX)),
     // (stacking) equipment, safety and ops items on top of the racks, as on the plan (utils/stacking.js)
-    ...others.filter(onTop).map(o => otherSVG(o)),
+    ...others.filter(onTop).map(o => otherSVG(o, PX)),
     /* labels and marks are worked out from the whole layout, as on the canvas
        (a hidden Columns layer still has columns); only their drawing is gated */
     labelsSVG(objects.filter(Boolean), gridSize, labelOpts),
+    rowNumbersSVG(rowPlaces, objects.filter(usable), gridSize, elevations),
     // the columns above the labels and marks, as on the canvas: a column is never hidden under an aisle label
     ...columns.map(o => columnGridSVG(o, gridSize, objects.filter(usable))),
-    ...columns.filter(o => o.showGrid !== false).map(o => columnAnnotSVG(o, gridSize, objects.filter(usable), colLz(o))),
+    ...columns.filter(o => o.showGrid !== false).map(o => columnAnnotSVG(o, gridSize, objects.filter(usable), colLz(o), colClear(o))),
     // (D1) the drawn shapes and texts, above the plan as on the canvas
     ...drawn.map(o => (o.type === 'text' ? textSVG(o) : drawnSVG(o, u, gridSize))),
     sectionKeySVG(objects.filter(usable), gridSize, namesLz),
@@ -632,7 +683,8 @@ export function buildLayoutSVG(objects, layers, gridSize, { title = 'Untitled La
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${paperW}mm" height="${paperH}mm" ` +
     `viewBox="${vb.x} ${vb.y} ${vb.width} ${vb.height}">${body}</svg>`
 
-  return { svg, paperW, paperH }
+  // (lane-fixes 8) `px`: world units per screen px on this sheet (0.25 mm on paper) — the canvas's screen widths printed
+  return { svg, paperW, paperH, px: PX }
 }
 
 /** The elevation sheets: one elevation per type × beam length in use — "Type A · 8' bay", its colour swatch and

@@ -216,8 +216,11 @@ describe('FU — arrows, sizes, columns', () => {
     const iGrid = objs.findIndex(o => o.type === 'column_grid'), iRack = objs.findIndex(o => o.type && o.type.startsWith('rack_'))
     expect(iGrid).toBeLessThan(iRack)                                                  // the array alone would bury them
     const noLabels = { labels: { showAisles: false, showMarks: false } }
-    const svg = buildLayoutSVG(objs, [], GS, noLabels).svg
-    const without = buildLayoutSVG(objs.filter(o => o.type !== 'column_grid'), [], GS, noLabels).svg
+    // (lane-fixes 8, pdf-parity) screen-px strokes print at the sheet's 0.25 mm a px, so a grid that widens the bounds changes
+    // their numbers: the order is compared with the stroke widths and dashes set aside
+    const flat = (s) => s.replace(/stroke-width="[^"]*"/g, 'stroke-width="w"').replace(/stroke-dasharray="[^"]*"/g, 'stroke-dasharray="d"')
+    const svg = flat(buildLayoutSVG(objs, [], GS, noLabels).svg)
+    const without = flat(buildLayoutSVG(objs.filter(o => o.type !== 'column_grid'), [], GS, noLabels).svg)
     const col = svg.indexOf('fill="#1F2321" opacity="1"')                              // the solid column square (C18)
     expect(col).toBeGreaterThan(0)
     // everything up to and including the last rack is identical with or without the grid: the columns come after it

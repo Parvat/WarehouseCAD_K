@@ -11629,6 +11629,33 @@ describe('REG — the hand check by real clicks', () => {
       expect(String(svg)).not.toMatch(/pitch|0\.375|3\/8|per ft/i)
     }, 2 * T)
 
+    onceIt('REG-lane-fixes-pdf-parity (click): (lane-fixes 8) the PDF prints the rack numbers the plan draws — the same names, at the same places — and the View card\'s Row numbers switch turns them off on both; a rack\'s edge prints at 0.25 mm a screen px', async () => {
+      const B = await import('./handCheck/browser.js'), fs = await import('node:fs')
+      L = await B.openLayout(app, fs.readFileSync(new URL('../../../docs/demo/demo-warehouse.wcad', import.meta.url), 'utf8'))
+      const fp = await fpOf()
+      await L.S('S.setState({ zoom: 0.3, panX: 100 - arg.x * 0.3, panY: 100 - arg.y * 0.3, selectedIds: [] })', fp); await L.page.waitForTimeout(400)
+      const sheet = () => L.S('return import("/src/export/pdfExport.js").then(M => { const st = S.getState(); const r = M.buildLayoutSVG(st.objects, st.layers, st.gridSize, { elevations: st.elevations }); return { svg: r.svg, px: r.px } })')
+      const onPlan = async () => (await L.page.evaluate(() => { const st = window.Konva.stages[0]; st.draw(); return st.find('.rack-line-label').map(t => t.text()) })).sort()
+      const printed = (svg) => [...svg.matchAll(/data-rack-number="([^"]+)"/g)].map(m => m[1]).sort()
+      let s = await sheet()
+      const plan = await onPlan()
+      expect(plan.length).toBeGreaterThan(10)
+      expect(printed(s.svg)).toEqual(plan)
+      // the same place: R1's printed x / y are the plan's (drawing units)
+      const r1 = await L.S('return import("/src/export/pdfExport.js").then(M => { const st = S.getState(); return M.rowNumberPlaces(st.objects, st.gridSize, st.elevations).find(p => p.text === "R1") })')
+      const node = await L.page.evaluate(() => { const st = window.Konva.stages[0], t = st.find('.rack-line-label').find(q => q.text() === 'R1'), r = t.getClientRect({ relativeTo: st }); return { x: r.x, y: r.y, w: r.width, h: r.height } })
+      expect(Math.abs((node.y + node.h / 2) - (r1.y + r1.h / 2))).toBeLessThan(2)
+      expect(Math.abs((node.x + node.w) - (r1.x + r1.w))).toBeLessThan(4)
+      // a rack's edge: its 1.25 screen px at 0.25 mm a px
+      expect(s.svg).toContain(`stroke="#2B3A67" stroke-width="${1.25 * s.px}"`)
+      // Row numbers off (a real click on the View card's switch): none on the plan, none on the PDF; on again: back
+      await viewSwitch('Row numbers').click()
+      expect(await onPlan()).toEqual([])
+      expect(printed((await sheet()).svg)).toEqual([])
+      await viewSwitch('Row numbers').click()
+      expect(printed((await sheet()).svg)).toEqual(plan)
+    }, 3 * T)
+
     /* ── text-and-overlap (docs/reports/text-and-overlap.md) ── */
     onceIt('REG-text-overlap (click): (text-and-overlap) the demo file and the four fixtures, each viewed tile by tile across the whole building at 15, 30 and 100 %: no two labels on the canvas overlap (every visible text — row numbers, aisle and face chips, names, chains, bubbles, badges), and no row number or aisle chip sits on a rack or a column', async () => {
       const B = await import('./handCheck/browser.js'), fs = await import('node:fs')

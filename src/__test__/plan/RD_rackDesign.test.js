@@ -53,11 +53,12 @@ describe('RD — the family colours', () => {
       { id: 'c', type: 'rack_pallet_flow', x: 800, y: 400, width: 500, height: 640, lanes: 3, palletDeep: 4, uprightWidth: 3 },
       { id: 'd', type: 'rack_mezzanine', x: 0, y: 1400, width: 1200, height: 800 },
     ]
-    const svg = buildLayoutSVG(objs, [], GS).svg
+    const sheet = buildLayoutSVG(objs, [], GS), svg = sheet.svg
     for (const f of ['pallet', 'lane', 'flow', 'mezz']) expect([f, svg.includes(RACK_FAMILIES[f].line)]).toEqual([f, true])
     for (const w of ['ENTRY', 'LOAD', 'PICK', 'MEZZANINE']) expect([w, svg.includes('>' + w + '<')]).toEqual([w, true])
     expect(svg).not.toMatch(/#DCE8DC/i)                                                  // the old rack fill
-    expect(svg).toMatch(/stroke-dasharray="4,3"/)                                        // the pallet slots
+    // the pallet slots: the canvas's 4 · 3 screen px dash at 0.25 mm a px (lane-fixes 8, pdf-parity — was 4,3 world units)
+    expect(svg).toContain(`stroke-dasharray="${4 * sheet.px} ${3 * sheet.px}"`)
   })
 })
 

@@ -131,3 +131,32 @@ describe('(lane-fixes 6) a beam number at a wall', () => {
     expect(beamOffWalls(p, 15, [], [], GS)).toBe(p)
   })
 })
+
+describe('(lane-fixes 8) pdf-parity: the PDF prints what the plan draws', () => {
+  it('every rack number, at the place the plan computes (canvas2/rowLabelPlace.js), in the rack numbers\' colour', async () => {
+    const { buildLayoutSVG, rowNumberPlaces } = await import('../../export/pdfExport')
+    const { rackNumbersNow } = await import('../../utils/rackLines')
+    for (const name of ['older-horizontal', 'crowded-vertical', 'walls-racks', 'lane-push']) {
+      const f = load(name), svg = buildLayoutSVG(f.objects, f.layers, GS, { elevations: f.elevations }).svg
+      const places = rowNumberPlaces(f.objects, GS, f.elevations)
+      const printed = [...svg.matchAll(/data-rack-number="([^"]+)"/g)].map(m => m[1])
+      expect([name, printed.length]).toEqual([name, places.length])
+      expect(places.length).toBeGreaterThan(0)
+      expect(rackNumbersNow(f.objects, GS).length).toBeGreaterThanOrEqual(places.length)
+      expect(printed.sort()).toEqual(places.map(p => p.text).sort())
+    }
+  })
+  it('screen-px strokes print at 0.25 mm a px: a rack\'s edge, the slots\' dash, an item\'s box edge, a zone\'s edge', async () => {
+    const { buildLayoutSVG } = await import('../../export/pdfExport')
+    const objs = [
+      { id: 'a', type: 'rack_row', x: 0, y: 0, width: 330, height: 140, beams: [96, 96], uprightWidth: 3 },
+      { id: 'f', type: 'mhe_forklift', x: 500, y: 0, width: 100, height: 200, stroke: '#f59e0b', fill: '#f59e0b22', strokeWidth: 2 },
+      { id: 'z', type: 'zone_office', x: 0, y: 400, width: 400, height: 300, stroke: '#7c3aed' },
+    ]
+    const s = buildLayoutSVG(objs, [], GS)
+    expect(s.px).toBeGreaterThan(0)
+    expect(s.svg).toContain(`stroke-dasharray="${2 * s.px} ${3 * s.px}"`)                     // a beam rack's pallet slots: 2 · 3 px
+    expect(s.svg).toContain(`stroke="#f59e0b" stroke-width="${2 * s.px}"`)                     // the forklift's 2 px edge
+    expect(s.svg).toContain(`stroke="#7c3aed" stroke-width="${1.5 * s.px}"`)                   // the zone's 1.5 px edge
+  })
+})

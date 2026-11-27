@@ -133,9 +133,11 @@ describe.each(['horizontal', 'vertical'])('PX — %s', (orientation) => {
   })
 
   it('PX-pdf: (rack-design — was: 0.45″ in #3E6B54 with a fill) the PDF prints each outline in the pallet navy, no fill, and real-width uprights in the same navy', () => {
-    const svg = buildLayoutSVG(racks, [], GS).svg
+    // (lane-fixes 8, pdf-parity) the 1.25 screen px edge prints at 0.25 mm a px (the sheet's `px` world units) — was 1.25
+    // world units, a third as heavy as the screen
+    const sheet = buildLayoutSVG(racks, [], GS), svg = sheet.svg
     const n = racks.reduce((k, r) => k + borders(r).length, 0)
-    expect((svg.match(/fill="none" stroke="#2B3A67" stroke-width="1\.25"/g) || []).length).toBe(n)
+    expect(svg.split(`fill="none" stroke="#2B3A67" stroke-width="${1.25 * sheet.px}"`).length - 1).toBe(n)
     expect(svg).not.toMatch(/#DCE8DC/i)
     expect((svg.match(/<g fill="#2B3A67">/g) || []).length).toBe(racks.length)
   })
