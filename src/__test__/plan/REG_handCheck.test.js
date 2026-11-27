@@ -11811,6 +11811,62 @@ describe('REG — the hand check by real clicks', () => {
       expect([o.type, o.bays, o.levels, o.lanesPerLevel, o.bayWidthIn, o.depthIn]).toEqual(['rack_carton_flow', 3, 4, 8, 96, 96])
     }, 3 * T)
 
+    onceIt('REG-r9-mezzanine (click): (r9-mezzanine) a mezzanine selected: its card reads "M1 · 30 × 20 ft · 600 sq ft · deck 10 ft" with its column grid (2 × 1 bays); Deck height typed in feet (12 ft) is one undo; the deck type picked from its list; Stairs 2 adds one (one undo); its stair pressed and dragged to the right edge moves there (one undo, Ctrl+Z back); a rack on a stair landing is a Check layout warning (the rack under the deck is allowed — no warning for it); its columns are drawn as squares; save and reload keep every field; a new one from the library places as before', async () => {
+      await lnOpen('mezzanine')
+      const m = await lnObj('mezz-1')
+      await lnView(m, 0.25); await lnSelect({ ...m, y: m.y + m.height * 0.2, height: m.height * 0.3 })
+      expect(await lnText()).toMatch(/M1 · 30 × 20 ft · 600 sq ft · deck 10 ft/)
+      expect((await lnCard().locator('[data-mezz-grid]').innerText()).trim()).toMatch(/^2 × 1 bays/)
+      // Deck height in feet: one undo
+      let h = await lnHist()
+      const dh = lnCard().getByRole('combobox', { name: 'Deck height (in)' })
+      await dh.click(); await dh.fill('12 ft'); await dh.press('Enter'); await L.page.waitForTimeout(300)
+      expect([(await lnObj('mezz-1')).deckHeightIn, (await lnHist()) - h]).toEqual([144, 1])
+      expect(await lnText()).toMatch(/deck 12 ft/)
+      // the deck type
+      h = await lnHist()
+      await lnCard().getByRole('combobox', { name: 'Deck type' }).selectOption('grating'); await L.page.waitForTimeout(300)
+      expect([(await lnObj('mezz-1')).deckType, (await lnHist()) - h]).toEqual(['grating', 1])
+      // two stairs: one undo
+      h = await lnHist(); await lnType('Stairs', 2)
+      expect([(await lnObj('mezz-1')).stairs.length, (await lnHist()) - h]).toEqual([2, 1])
+      await lnBlurUndo()
+      expect((await lnObj('mezz-1')).stairs?.length ?? 1).toBe(1)
+      // the stair dragged along the edges to the right edge: one undo
+      await lnSelect({ ...m, y: m.y + m.height * 0.2, height: m.height * 0.3 })
+      const st = await L.S('return import("/src/racks/mezzanine.js").then(M => M.mezzStairs(S.getState().objects.find(o => o.id === "mezz-1"), S.getState().gridSize || 40)[0].box)')
+      const a = await L.toScreen({ x: st.x + st.w / 2, y: st.y + st.h / 2 }), b = await L.toScreen({ x: m.x + m.width + 60, y: m.y + m.height * 0.5 })
+      h = await lnHist()
+      await L.page.mouse.move(a.x, a.y); await L.page.mouse.down()
+      for (let k = 1; k <= 10; k++) await L.page.mouse.move(a.x + (b.x - a.x) * k / 10, a.y + (b.y - a.y) * k / 10)
+      await L.page.mouse.up(); await L.page.waitForTimeout(350)
+      let o = await lnObj('mezz-1')
+      expect([o.stairs[0].edge, Math.abs(o.stairs[0].at - 0.5) < 0.05, o.x, o.y, o.width, o.height, (await lnHist()) - h]).toEqual(['right', true, m.x, m.y, m.width, m.height, 1])
+      await lnBlurUndo()
+      expect(((await lnObj('mezz-1')).stairs || [{ edge: 'bottom' }])[0].edge).toBe('bottom')
+      // Check layout: the rack on the landing — a warning; the rack under the deck — none
+      await L.page.locator('[data-island="top-right"]').getByRole('button', { name: 'Check' }).click(); await L.page.waitForTimeout(600)
+      const txt = (await lnCard().innerText()).replace(/\s+/g, ' ')
+      expect(txt).toMatch(/Mezzanine Stair 1: needs a 3 ft clear landing at its foot \(a rack is there\)/)
+      // the other warning is its pallet gate, which faces a building column here (a face aisle like a rack face); none for the rack under the deck
+      expect(txt).toMatch(/Mezzanine Pallet gate 1: its face aisle is 0/)
+      expect((txt.match(/Warning Mezzanine/g) || []).length).toBe(2)
+      await L.page.keyboard.press('Escape'); await L.page.waitForTimeout(200)
+      // drawn: its columns as squares at the grid
+      const cols = await L.S('return import("/src/render/rackOps.js").then(K => K.rackDrawOps(S.getState().objects.find(o => o.id === "mezz-1"), { gridSize: 40 }).find(op => op.name === "mezz-columns").rects.length)')
+      expect(cols).toBe(6)
+      // save and reload
+      await lnSelect({ ...m, y: m.y + m.height * 0.2, height: m.height * 0.3 })
+      const saved = await L.S('return SL.serializeScene(S.getState())')
+      const B = await import('./handCheck/browser.js'); L = await B.openLayout(app, saved)
+      o = await lnObj('mezz-1')
+      expect([o.deckHeightIn, o.deckType, o.width, o.height]).toEqual([144, 'grating', m.width, m.height])
+      // a new one from the library: placed as before (its library size), back to Select
+      await lnView(m, 0.2)
+      const placed = await lnPlace('Mezzanine', { x: m.x + m.width + 1400, y: m.y + m.height / 2 })
+      expect([placed.type, placed.width, placed.height, await L.S('return S.getState().activeTool')]).toEqual(['rack_mezzanine', 40 * 40, 20 * 40, 'select'])
+    }, 3 * T)
+
     onceIt('REG-lane-fixes-shelving (click): (lane-fixes 5) a shelving run of 3 units: a click on it, its card says 3 of 3 units usable; a zone over one unit (inside the run, both pick faces open), then a click on the run: 2 of 3, one red X', async () => {
       const B = await import('./handCheck/browser.js')
       L = await B.openLayout(app, B.fixture('older-horizontal'))

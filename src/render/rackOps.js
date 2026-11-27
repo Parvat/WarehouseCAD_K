@@ -35,6 +35,7 @@ import { deepOf, deepGapOf } from '../utils/deep'   // (r2-double-deep)
 import { positionsPerBeam } from '../utils/palletFit'
 import { rackColors, RACK_FAMILIES } from './rackFamily'
 import { laneSpec } from '../racks/laneEngine'   // (pushback-frames)
+import { mezzColumns, mezzStairs, mezzGates, mezzRail } from '../racks/mezzanine'   // (r9-mezzanine)
 
 /* The older names, kept for the code and tests that read them: the pallet family now (rack-design). */
 export const RACK_PALETTE = {
@@ -460,12 +461,34 @@ export function rackMezzanineOps(obj, gridSize) {
   const ops = [{ ...body(x, y, w, h, null) }]   // the body: its hit area only — its edge is the dashed line below
   ops.push(linesOp([x, y, x + w, y, x + w, y, x + w, y + h, x + w, y + h, x, y + h, x, y + h, x, y], c.line, RACK_LINE.mezz, { name: 'mezz-edge', dash: [9, 5] }))
   ops.push(linesOp([x, y, x + w, y + h, x + w, y, x, y + h], c.line, RACK_LINE.hair, { name: 'mezz-cross', opacity: 0.6 }))
-  // the posts: the corners, and along each edge no more than 25 ft apart
-  const pts = [], step = 25 * gridSize
-  const nx = Math.max(1, Math.ceil(w / step)), ny = Math.max(1, Math.ceil(h / step))
-  for (let i = 0; i <= nx; i++) pts.push(x + (w * i) / nx, y, x + (w * i) / nx, y + h)
-  for (let j = 1; j < ny; j++) pts.push(x, y + (h * j) / ny, x + w, y + (h * j) / ny)
-  ops.push({ op: 'dots', pts, r: inch(5, gridSize), fill: c.line })
+  /* (r9-mezzanine) its columns: small squares at the column grid (about 20 ft each way, whole bays — racks/mezzanine.js;
+     were: dots along the edges only, no more than 25 ft apart); the handrail on the open edges, 6 in inside; each pallet
+     gate a short bar on its edge; each stair a footprint outside its edge — its treads, and an arrow up toward the deck */
+  const cs = inch(8, gridSize)
+  ops.push({ op: 'uprights', name: 'mezz-columns', rects: mezzColumns(obj, gridSize).map(p => ({ x: p.x - cs / 2, y: p.y - cs / 2, w: cs, h: cs })), fill: c.line })
+  const rail = mezzRail(obj, gridSize), ins = inch(6, gridSize)
+  const railSegs = []
+  for (let i = 0; i < rail.length; i += 4) { const horiz = Math.abs(rail[i + 1] - rail[i + 3]) < 1e-6; const dy = horiz ? (Math.abs(rail[i + 1] - y) < 1e-6 ? ins : -ins) : 0, dx = horiz ? 0 : (Math.abs(rail[i] - x) < 1e-6 ? ins : -ins); railSegs.push(rail[i] + dx, rail[i + 1] + dy, rail[i + 2] + dx, rail[i + 3] + dy) }
+  const ro = linesOp(railSegs, c.line, RACK_LINE.hair, { name: 'mezz-rail' })
+  if (ro) ops.push(ro)
+  const gt = inch(4, gridSize)
+  const gates = mezzGates(obj, gridSize).map(g => { const horiz = g.edge === 'top' || g.edge === 'bottom'; const x0 = Math.min(g.bar.x1, g.bar.x2), y0 = Math.min(g.bar.y1, g.bar.y2); return horiz ? { x: x0, y: y0 - gt / 2, w: Math.abs(g.bar.x2 - g.bar.x1), h: gt } : { x: x0 - gt / 2, y: y0, w: gt, h: Math.abs(g.bar.y2 - g.bar.y1) } })
+  if (gates.length) ops.push({ op: 'uprights', name: 'mezz-gates', rects: gates, fill: c.line })
+  const stairs = mezzStairs(obj, gridSize)
+  if (stairs.length) {
+    const treads = [], going = inch(11, gridSize)
+    for (const st of stairs) {
+      const b = st.box, horiz = st.edge === 'top' || st.edge === 'bottom'
+      treads.push(b.x, b.y, b.x + b.w, b.y, b.x + b.w, b.y, b.x + b.w, b.y + b.h, b.x + b.w, b.y + b.h, b.x, b.y + b.h, b.x, b.y + b.h, b.x, b.y)
+      const len = horiz ? b.h : b.w
+      for (let t = going; t < len - 1e-6; t += going) { if (horiz) treads.push(b.x, b.y + t, b.x + b.w, b.y + t); else treads.push(b.x + t, b.y, b.x + t, b.y + b.h) }
+    }
+    ops.push(linesOp(treads, c.line, RACK_LINE.hair, { name: 'mezz-stairs' }))
+    // the arrow up each stair (toward the deck): a shaft and an open head, as lines
+    const ar = [], hd = inch(12, gridSize)
+    for (const st of stairs) { const a = st.arrow, L = Math.hypot(a.x1 - a.x0, a.y1 - a.y0) || 1, ux = (a.x1 - a.x0) / L, uy = (a.y1 - a.y0) / L; ar.push(a.x0, a.y0, a.x1, a.y1, a.x1, a.y1, a.x1 - ux * hd - uy * hd * 0.5, a.y1 - uy * hd + ux * hd * 0.5, a.x1, a.y1, a.x1 - ux * hd + uy * hd * 0.5, a.y1 - uy * hd - ux * hd * 0.5) }
+    ops.push(linesOp(ar, c.line, RACK_LINE.edge, { name: 'mezz-stair-arrows' }))
+  }
   // its name and size, centred
   const s1 = inch(14, gridSize), s2 = inch(11, gridSize)   // (rack-design-match — was 16″ / 12″)
   if (w > s1 * 7 && h > (s1 + s2) * 1.6) {

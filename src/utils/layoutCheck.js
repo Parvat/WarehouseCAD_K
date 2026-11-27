@@ -67,6 +67,7 @@ import { rackLinesNow } from './rackLines'
 import { laneFaceGaps } from '../generate/laneFaces'   // (rack-round2 1)
 import { doorClearRects, DOOR_NAMES } from './doorClear'
 import { DEFAULT_FILL_SETTINGS } from '../generate/fillRacking'
+import { mezzWarnings } from '../racks/mezzCheck'   // (r9-mezzanine)
 
 const FP = new Set(['fp_rect', 'fp_l', 'fp_l_mirror', 'fp_t', 'fp_u', 'fp_cross'])
 const TYPE_NAMES = namesFor('check')   // utils/rackTypes.js (R1)
@@ -472,11 +473,17 @@ function checkLayoutOne(objects, { profile = MHE_PROFILES.reach, gridSize = 40, 
         text: `${name} runs ${Math.round(ft)} ft without a cross aisle, max ${+maxRunFt.toFixed(1)} ft` })
     } }
 
+  // (r9-mezzanine) a mezzanine's stairs need a 3 ft clear landing at the foot; a pallet gate a face aisle like a rack face
+  for (const m of mezzWarnings(objects, gridSize, profile)) {
+    const o = objects.find(q => q.id === m.id), b = m.box || (o ? { x: o.x, y: o.y, w: o.width, h: o.height } : null)
+    warnings.push({ severity: 'warning', kind: m.kind === 'landing' ? 'mezz-landing' : 'mezz-gate', ids: [m.id], box: b, highlight: b ? [outline(b, HL.amber)] : [], text: `Mezzanine — ${m.text}` })
+  }
+
   const reminders = projectReminders(elevations)
   return { errors: errors.sort(byKind), warnings: warnings.sort(byKind), ...(reminders.length ? { reminders } : {}) }
 }
 
-const KIND_ORDER = ['aisle-drive', 'aisle-face', 'cross-aisle', 'no-way-in', 'overlap', 'section-overlap', 'door', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run']
+const KIND_ORDER = ['aisle-drive', 'aisle-face', 'cross-aisle', 'no-way-in', 'overlap', 'section-overlap', 'door', 'outside', 'outside-item', 'elev-height', 'elev-load-clear', 'elev-sprinkler', 'elev-fit', 'upright', 'unreachable', 'aisle-pick', 'zone-no-way-in', 'zone-face', 'zone-closed', 'wall-face', 'columns-lost', 'oversized', 'elev-frame-depth', 'angled', 'section-aisle', 'max-run', 'mezz-landing', 'mezz-gate']
 function byKind(a, b) { return KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) }
 
 /** (small-bugs) Do polygons A and B overlap — an edge of one crossing an edge of the other, or a point of one strictly

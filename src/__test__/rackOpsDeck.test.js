@@ -27,13 +27,14 @@ describe('rackOps — mezzanine', () => {
     expect(by('mezz-cross').strokeWidth).toBe(RACK_LINE.hair)
   })
 
-  it('posts at the corners and along the edges, no more than 25 ft apart', () => {
-    const d = ops.find(o => o.op === 'dots')
+  // (r9-mezzanine) its columns: small squares at a grid about 20 ft each way, whole bays (were: dots along the edges, 25 ft apart)
+  it('columns at the grid: about 20 ft each way, whole bays', () => {
+    const d = ops.find(o => o.name === 'mezz-columns')
     expect(d.fill).toBe(RACK_FAMILIES.mezz.line)
-    // 30′ wide: 2 spans → 3 posts on each long edge; 20′: 1 span → corners only
-    expect(d.pts.length / 2).toBe(6)
-    const big = rackMezzanineOps({ ...deck, width: 2400 }, GS).find(o => o.op === 'dots')
-    expect(big.pts.length / 2).toBe(8)
+    // 30′ × 20′: 2 × 1 bays → 3 × 2 columns
+    expect(d.rects.length).toBe(6)
+    const big = rackMezzanineOps({ ...deck, width: 2400 }, GS).find(o => o.name === 'mezz-columns')
+    expect(big.rects.length).toBe(8)
   })
 
   it('names itself and its size in the middle', () => {

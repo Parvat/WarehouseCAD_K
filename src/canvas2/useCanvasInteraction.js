@@ -18,6 +18,7 @@ import { laneEngineOn, laneResize } from '../racks/laneEngine'   // (r3-drive-in
 import { cantResize } from '../racks/cantilever'   // (r6-cantilever)
 import { shelfResize } from '../racks/shelving'   // (r7-shelving)
 import { cartonResize } from '../racks/cartonFlow'   // (r8-carton-flow)
+import { mezzPartAt, moveOnEdge } from '../racks/mezzanine'   // (r9-mezzanine)
 import { snapToGrid, objectContains, applyResize, applyFpWallDrag, getObjectBounds, getFpWallSegments, getWallDragAxis } from '../utils/canvas'
 import { PORTED_RACK_TYPES } from '../render/rackOps'
 import { computeSmartGuides } from './smartGuides'
@@ -683,6 +684,11 @@ export function useCanvasInteraction({
           const r = POINT_HANDLE_PX / 2 / view.current.zoom
           const i = polygonOf(selected).findIndex(([x, y]) => Math.abs(world.x - x) <= r && Math.abs(world.y - y) <= r)
           if (i >= 0) { sectionPoint.current = { id: selected.id, i, orig: selected }; return }
+        }
+        /* (r9-mezzanine) a selected mezzanine: a press on one of its stairs or pallet gates drags it along the edges */
+        if (selected && selected.type === 'rack_mezzanine' && !selected.locked) {
+          const part = mezzPartAt(selected, world, st.gridSize || 40, 6 / view.current.zoom)
+          if (part) { shapeEdit.current = { id: selected.id, kind: 'mezz', part, orig: selected, from: world }; return }
         }
         /* (d1-trim — was d1-polish's length label: a line, an arrow, an elbow arrow are annotations, no length to type) */
         /* (d2-arrows) an elbow or a block arrow: a press on an end drags it (snapped as drawing snaps; an elbow re-routes —
@@ -1474,7 +1480,8 @@ export function useCanvasInteraction({
         if (!se.moved && Math.hypot(w.x - se.from.x, w.y - se.from.y) * view.current.zoom < 3) return
         se.moved = true
         const st = useCanvasStore.getState()
-        if (se.kind === 'point') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, skip: se.id }).p; st.updateObject(se.id, movePointTo(se.orig, se.i, q.x, q.y)) }
+        if (se.kind === 'mezz') st.updateObject(se.id, moveOnEdge(se.orig, se.part.kind, se.part.i, w.x, w.y))   // (r9-mezzanine)
+        else if (se.kind === 'point') { const q = snapPoint(w, { st, zoom: view.current.zoom, alt: !!evt.altKey, skip: se.id }).p; st.updateObject(se.id, movePointTo(se.orig, se.i, q.x, q.y)) }
         else if (se.kind === 'end') {
           const o = se.orig, fixed = se.i ? { x: o.x1, y: o.y1 } : { x: o.x2, y: o.y2 }
           // the end follows the pointer's travel (its handle may sit behind the tip — d1-polish), snapped as drawing snaps
