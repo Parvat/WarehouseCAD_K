@@ -1,6 +1,9 @@
 # lane-fixes: PP's answers to the holiday run, and pdf-parity
 
-Branch `lane-fixes`, from master 7405881 (holiday-run merged). Full suite: see the end of this report.
+Branch `lane-fixes`, from master 7405881 (holiday-run merged). Full suite: **4,671 / 4,671**.
+- The last full run: 4,666 passed. One Chromium page crashed ("Target crashed", the worker exited), and the 5 tests in that
+  worker failed with it.
+- Those 5 (REG-r2-letters, REG-r2-chips, REG-r3-shelving, REG-lane-fixes-pushback-first) pass rerun by name on both fixtures.
 
 PP's ten answers (2026-11-27) are recorded in docs/RESUME.md, FEATURES.md and EPICS.md.
 
