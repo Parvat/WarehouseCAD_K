@@ -1,4 +1,4 @@
-# pushback-frames — push-back short frames tied with row spacers (PP option B)
+﻿# pushback-frames â€” push-back short frames tied with row spacers (PP option B)
 
 Branch `pushback-frames`, from `lane-fixes` (0f8f5f9). Master (7405881) did not have lane-fixes yet, and this round
 replaces lane-fixes' push-back frame and anchor lines, so it is built on top of it; merging it brings lane-fixes too.
@@ -8,11 +8,11 @@ replaces lane-fixes' push-back frame and anchor lines, so it is built on top of 
 **The rule (PP, option B).** A push-back 4 deep or more is two short frames per post line, joined by row spacers, not one
 frame the full depth.
 
-- **Frames per post line:** N = 1 for 2–3 deep, N = 2 for 4–6 deep.
+- **Frames per post line:** N = 1 for 2â€“3 deep, N = 2 for 4â€“6 deep.
   - That is N = ceil(deep / 3): a frame carries up to 3 pallets (`PUSHBACK_PER_FRAME` in `racks/laneEngine.js`).
-  - The pallets split as evenly as they can, with the odd one on the front (LOAD) frame: 4 → 2 + 2, 5 → 2 + 3, 6 → 3 + 3.
-- **Depth:** frame depths (pallets × depth station) plus one row spacer length at each joint.
-  - A new 3 × 4 × 3 push-back is 4 × 52 + 6 = 214 in deep (it was 208).
+  - The pallets split as evenly as they can, with the odd one on the front (LOAD) frame: 4 â†’ 2 + 2, 5 â†’ 2 + 3, 6 â†’ 3 + 3.
+- **Depth:** frame depths (pallets Ã— depth station) plus one row spacer length at each joint.
+  - A new 3 Ã— 4 Ã— 3 push-back is 4 Ã— 52 + 6 = 214 in deep (it was 208).
   - The drawing leaves the spacer's gap between the frames' slots, and the selection box, aisle check and dimensions all
     use the new depth.
 
@@ -41,18 +41,18 @@ Symbols:
 
 | Part | Qty | Size | Before (lane-fixes) |
 |---|---|---|---|
-| Upright frame | P × N | listed by frame depth: overall height × (the frame's pallets × S) | P × F, full depth |
-| Row spacer | P × (N − 1) × J | listed by length (the card's Row spacer length) | — |
-| Beam | L × V × (N + 1): front, each joint, rear | lane width | L × V × F, the same count |
-| Rail set | L × V | D deep | unchanged |
-| Cart | (D − 1) × L × V | | unchanged |
-| Entry guide | 2 × L | | unchanged |
-| Anchor | 2 × P × 2N: 2 per post, 2 posts a frame | | 2 × P × F |
+| Upright frame | P Ã— N | listed by frame depth: overall height Ã— (the frame's pallets Ã— S) | P Ã— F, full depth |
+| Row spacer | P Ã— (N âˆ’ 1) Ã— J | listed by length (the card's Row spacer length) | â€” |
+| Beam | L Ã— V Ã— (N + 1): front, each joint, rear | lane width | L Ã— V Ã— F, the same count |
+| Rail set | L Ã— V | D deep | unchanged |
+| Cart | (D âˆ’ 1) Ã— L Ã— V | | unchanged |
+| Entry guide | 2 Ã— L | | unchanged |
+| Anchor | 2 Ã— P Ã— 2N: 2 per post, 2 posts a frame | | 2 Ã— P Ã— F |
 
 (F was the frame-line count: 2 up to 3 deep, 3 from 4 deep, which equals N + 1, so beams don't change.)
 
-**PP's example, 3 lanes × 4 deep × 3 levels:**
-- 8 frames, 15 ft 8 in × 8 ft 8 in
+**PP's example, 3 lanes Ã— 4 deep Ã— 3 levels:**
+- 8 frames, 15 ft 8 in Ã— 8 ft 8 in
 - 8 row spacers, 6 in
 - 27 beams
 - 9 rail sets
@@ -63,7 +63,7 @@ Symbols:
 In the BOM tab, Tally and xlsx, each part's sizes are listed together (frames by depth, then spacers by length), in the
 order the parts first appear.
 
-## Rule 7 — before (lane-fixes 0f8f5f9) / after
+## Rule 7 â€” before (lane-fixes 0f8f5f9) / after
 
 The same 12 cases as lane-fixes:
 - the demo file;
@@ -83,20 +83,20 @@ flags, save and reload, PDF sheet, and Generate.
 
 | Case | Line | Before | After |
 |---|---|---|---|
-| lane-push (2 saved racks, 3 × 4 × 3) | Upright frame | 15 ft × 17 ft 4 in × 24 | 15 ft × 8 ft 8 in × 16 |
-| | Row spacer | — | 0 in × 16 (what fits: the saved size kept) |
+| lane-push (2 saved racks, 3 Ã— 4 Ã— 3) | Upright frame | 15 ft Ã— 17 ft 4 in Ã— 24 | 15 ft Ã— 8 ft 8 in Ã— 16 |
+| | Row spacer | â€” | 0 in Ã— 16 (what fits: the saved size kept) |
 | | Beam | 54 | 54 |
 | | Rail set / Cart / Entry guide | 18 / 54 / 12 | 18 / 54 / 12 |
 | | Anchor | 48 | 64 |
 | | xlsx rows | 13 | 14 |
-| walls-racks (1 saved rack, 2 × 5, 4 levels) | Upright frame | 5 ft × 20 ft × 9 | 5 ft × 8 ft × 3 and 5 ft × 12 ft × 3 |
-| | Row spacer | — | 0 in × 6 |
+| walls-racks (1 saved rack, 2 Ã— 5, 4 levels) | Upright frame | 5 ft Ã— 20 ft Ã— 9 | 5 ft Ã— 8 ft Ã— 3 and 5 ft Ã— 12 ft Ã— 3 |
+| | Row spacer | â€” | 0 in Ã— 6 |
 | | Beam | 24 | 24 |
 | | Rail set / Cart / Entry guide | 8 / 32 / 4 | 8 / 32 / 4 |
 | | Anchor | 18 | 24 |
 | | xlsx rows | 13 | 15 |
-| A new push-back (library, 3 × 4 × 3) | depth | 17 ft 4 in | 17 ft 10 in (+ the 6 in spacer) |
-| | BOM | Frame × 12, Beam 27, Anchor 24 | Frame × 8, Row spacer 6 in × 8, Beam 27, Anchor 32 |
+| A new push-back (library, 3 Ã— 4 Ã— 3) | depth | 17 ft 4 in | 17 ft 10 in (+ the 6 in spacer) |
+| | BOM | Frame Ã— 12, Beam 27, Anchor 24 | Frame Ã— 8, Row spacer 6 in Ã— 8, Beam 27, Anchor 32 |
 
 Generate places no push-back (the rack-type choice is parked), so its results don't change in any case.
 
@@ -107,7 +107,7 @@ Screenshots (lane-push with a new push-back, P3, beside the saved ones):
 ## Tests
 
 **`PF_pushbackFrames.test.js` (16 unit tests):**
-- the frame split: 2–6 deep; 3 frames at 2 a frame;
+- the frame split: 2â€“6 deep; 3 frames at 2 a frame;
 - the BOM at 1 frame (3 deep), 2 frames (PP's example; 5 deep with two frame depths) and 3 frames (the formulas at N = 3);
 - spacers per joint;
 - the size: new, spacer edit, 3 and 6 deep, the depth handle;
@@ -116,27 +116,27 @@ Screenshots (lane-push with a new push-back, P3, beside the saved ones):
 - the section's line order.
 
 **`REG-pushback-frames` (real clicks, both REG fixtures):**
-1. Place a Push-back from the library: 4 deep, spacer 6, 2 per joint, 4 × 52 + 6 in.
+1. Place a Push-back from the library: 4 deep, spacer 6, 2 per joint, 4 Ã— 52 + 6 in.
 2. The card fields and the hint show.
 3. Type `1'` in Row spacer length: 12 in, 6 in deeper, corner held, one undo, and Ctrl+Z goes back.
 4. Spacers per joint 3: the size is unchanged, one undo.
-5. The BOM tab: Frame 15 ft 8 in × 8 ft 8 in × 8, Row spacer 6 in × 12.
-6. Deep 3: 3 × 52 in, "1 frame, no row spacer".
-7. The saved racks are still 4 × 52 in.
+5. The BOM tab: Frame 15 ft 8 in Ã— 8 ft 8 in Ã— 8, Row spacer 6 in Ã— 12.
+6. Deep 3: 3 Ã— 52 in, "1 frame, no row spacer".
+7. The saved racks are still 4 Ã— 52 in.
 
 **Updated expectations (kept tests):**
 - `LN_laneEngine`: the new push-back size, the BOM formulas.
-- `LF_laneFixes`: anchors 2 × P × 2N; the xlsx row list gains Row spacer.
-- `REG-lane-fixes-bom`: lane-push Anchor 48 → 64 in the BOM tab, Tally and xlsx.
+- `LF_laneFixes`: anchors 2 Ã— P Ã— 2N; the xlsx row list gains Row spacer.
+- `REG-lane-fixes-bom`: lane-push Anchor 48 â†’ 64 in the BOM tab, Tally and xlsx.
 
-**Full suite:** see the final reply.
+**Full suite:** 4,689 / 4,689. The full run had 4,687 passed and 2 failed: REG-r4-push-back still expected the old 208 in depth of a new push-back. I updated it to 4 × 52 + 6 = 214 in, kept the test, and it passes rerun by name, together with REG-basics.
 
 ## Questions for PP
 
 1. **Frames per post line.** The brief gives both "N = ceil(deep / 2)" and "2 to 3 deep = 1 frame, 4 to 6 deep = 2
    frames". These disagree at 3, 5 and 6 deep. I built the ranges: up to 3 pallets a frame, so a 6-deep is 2 frames of 3.
    - ceil(deep / 2) would make a 3-deep 2 frames (2 + 1) and a 5- or 6-deep 3 frames.
-   - Switching is one constant (`PUSHBACK_PER_FRAME` 3 → 2), and the formulas are already tested at 3 frames.
+   - Switching is one constant (`PUSHBACK_PER_FRAME` 3 â†’ 2), and the formulas are already tested at 3 frames.
    - Which is right?
 2. **Saved push-backs list their row spacers at 0 in**, because that is what fits their saved size. Is that acceptable
    until someone types a length, or should a saved rack get 6 in spacers and grow 6 in deeper per joint?
