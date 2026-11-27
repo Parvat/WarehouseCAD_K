@@ -493,8 +493,9 @@ export function rackMezzanineOps(obj, gridSize) {
   const s1 = inch(14, gridSize), s2 = inch(11, gridSize)   // (rack-design-match — was 16″ / 12″)
   if (w > s1 * 7 && h > (s1 + s2) * 1.6) {
     const ft = (v) => `${Math.round((v / gridSize) * 10) / 10}′`
-    ops.push({ op: 'text', x: x + w / 2, y: y + h / 2 - (s1 + s2 * 1.2) / 2, size: s1, text: 'MEZZANINE', color: c.line, bold: true, halo: true })
-    ops.push({ op: 'text', x: x + w / 2, y: y + h / 2 - (s1 + s2 * 1.2) / 2 + s1 * 1.15, size: s2, text: `${ft(w)} × ${ft(h)}`, color: c.line, halo: true })
+    // (filler-text-pdf) the size line a half line further down: the name and the size touched (the overlap scan)
+    ops.push({ op: 'text', x: x + w / 2, y: y + h / 2 - (s1 * 1.5 + s2 * 1.2) / 2, size: s1, text: 'MEZZANINE', color: c.line, bold: true, halo: true })
+    ops.push({ op: 'text', x: x + w / 2, y: y + h / 2 - (s1 * 1.5 + s2 * 1.2) / 2 + s1 * 1.5, size: s2, text: `${ft(w)} × ${ft(h)}`, color: c.line, halo: true })
   }
   return ops
 }
